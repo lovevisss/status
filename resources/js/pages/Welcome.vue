@@ -9,8 +9,10 @@ import {
     ChevronRight,
     Clock3,
     ExternalLink,
+    Search,
     ShieldCheck,
     WifiOff,
+    X,
 } from '@lucide/vue';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 
@@ -51,6 +53,7 @@ const data = ref<StatusData>({
 });
 const monthOffset = ref(0);
 const selectedDay = ref<string | null>(null);
+const serviceSearch = ref('');
 let timer: ReturnType<typeof setInterval> | undefined;
 const today = new Date();
 today.setHours(12, 0, 0, 0);
@@ -101,6 +104,18 @@ const averageUptime = computed(() => {
     return a.length
         ? (a.reduce((x, y) => x + y, 0) / a.length).toFixed(2)
         : '—';
+});
+const filteredServices = computed(() => {
+    const query = serviceSearch.value.trim().toLocaleLowerCase();
+    if (!query) return data.value.services;
+
+    return data.value.services.filter((service) => {
+        const hostname = new URL(service.url).hostname.toLocaleLowerCase();
+        return (
+            hostname.includes(query) ||
+            service.name.toLocaleLowerCase().includes(query)
+        );
+    });
 });
 const monthDate = computed(
     () =>
@@ -297,13 +312,40 @@ onUnmounted(() => {
                             </div>
                             <h2>服务运行状态</h2>
                         </div>
-                        <span class="section-note"
-                            >最近 30 天的每日检测记录</span
-                        >
+                        <div class="service-tools">
+                            <span class="section-note"
+                                >最近 30 天的每日检测记录</span
+                            >
+                            <label class="service-search">
+                                <Search :size="17" aria-hidden="true" />
+                                <input
+                                    v-model="serviceSearch"
+                                    type="search"
+                                    autocomplete="off"
+                                    aria-label="按域名或服务名称查找"
+                                    placeholder="搜索域名或服务名称"
+                                />
+                                <button
+                                    v-if="serviceSearch"
+                                    type="button"
+                                    aria-label="清空搜索"
+                                    @click="serviceSearch = ''"
+                                >
+                                    <X :size="15" />
+                                </button>
+                            </label>
+                        </div>
                     </div>
+                    <p class="search-count" aria-live="polite">
+                        {{
+                            serviceSearch.trim()
+                                ? `找到 ${filteredServices.length} / ${data.services.length} 项服务`
+                                : `共 ${data.services.length} 项服务`
+                        }}
+                    </p>
                     <div class="services-list">
                         <article
-                            v-for="(service, index) in data.services"
+                            v-for="(service, index) in filteredServices"
                             :key="service.key"
                             class="service-card"
                         >
@@ -397,6 +439,17 @@ onUnmounted(() => {
                                 {{ service.error }}
                             </div>
                         </article>
+                    </div>
+                    <div
+                        v-if="filteredServices.length === 0"
+                        class="search-empty"
+                    >
+                        <Search :size="23" aria-hidden="true" />
+                        <strong>没有找到匹配的服务</strong>
+                        <span>试试输入其他域名片段或服务名称。</span>
+                        <button type="button" @click="serviceSearch = ''">
+                            清空搜索
+                        </button>
                     </div>
                     <div class="legend">
                         <span><i class="legend-up"></i> 正常</span
@@ -874,27 +927,95 @@ onUnmounted(() => {
 .section-note {
     font-size: 12px;
     color: #9aa69b;
-    padding-bottom: 5px;
+}
+.service-tools {
+    display: flex;
+    align-items: end;
+    flex-direction: column;
+    gap: 10px;
+}
+.service-search {
+    width: min(310px, 100%);
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 0 11px;
+    border: 1px solid #dfe9df;
+    border-radius: 10px;
+    background: #fff;
+    color: #83a18d;
+    box-shadow: 0 4px 16px rgba(29, 67, 49, 0.025);
+    transition:
+        border-color 0.15s,
+        box-shadow 0.15s;
+}
+.service-search:focus-within {
+    border-color: #61a77c;
+    box-shadow: 0 0 0 3px #e5f2e9;
+}
+.service-search input {
+    min-width: 0;
+    flex: 1;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--ink);
+    font:
+        12px 'Noto Sans SC',
+        sans-serif;
+}
+.service-search input::placeholder {
+    color: #a8b6ab;
+}
+.service-search input::-webkit-search-cancel-button {
+    display: none;
+}
+.service-search button {
+    display: grid;
+    place-items: center;
+    padding: 3px;
+    border: 0;
+    background: transparent;
+    color: #7f9b87;
+    cursor: pointer;
+}
+.service-search button:hover {
+    color: #246a49;
+}
+.search-count {
+    margin: -2px 0 13px;
+    color: #8fa396;
+    font:
+        11px 'DM Mono',
+        monospace;
 }
 .services-list {
     display: grid;
-    gap: 14px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
 }
 .service-card {
+    min-width: 0;
     background: #fff;
     border: 1px solid var(--line);
-    border-radius: 15px;
-    padding: 25px 27px 20px;
+    border-radius: 13px;
+    padding: 18px 19px 16px;
     box-shadow: 0 5px 20px rgba(29, 67, 49, 0.022);
 }
 .service-top {
     display: flex;
     justify-content: space-between;
     align-items: start;
+    gap: 12px;
 }
 .service-identity {
     display: flex;
-    gap: 19px;
+    gap: 11px;
+    min-width: 0;
+}
+.service-name-wrap {
+    min-width: 0;
 }
 .service-index {
     font:
@@ -906,7 +1027,8 @@ onUnmounted(() => {
 .service-title-line {
     display: flex;
     align-items: center;
-    gap: 9px;
+    flex-wrap: wrap;
+    gap: 6px;
 }
 .status-indicator {
     width: 9px;
@@ -924,7 +1046,7 @@ onUnmounted(() => {
 }
 .service-title-line h3 {
     margin: 0;
-    font-size: 18px;
+    font-size: 16px;
     letter-spacing: -0.035em;
 }
 .state-tag {
@@ -945,16 +1067,17 @@ onUnmounted(() => {
     color: #b65738;
 }
 .service-name-wrap p {
-    margin: 8px 0 0;
+    margin: 5px 0 0;
     color: #98a59b;
     font-size: 12px;
 }
 .service-rate {
     text-align: right;
+    flex: none;
 }
 .service-rate strong {
     font:
-        500 21px 'DM Mono',
+        500 18px 'DM Mono',
         monospace;
     color: #2f7559;
 }
@@ -966,9 +1089,9 @@ onUnmounted(() => {
 }
 .service-bar {
     display: flex;
-    gap: 3px;
-    margin-top: 28px;
-    height: 27px;
+    gap: 2px;
+    margin-top: 19px;
+    height: 19px;
 }
 .bar-day {
     flex: 1;
@@ -996,16 +1119,16 @@ onUnmounted(() => {
         10px 'DM Mono',
         monospace;
     color: #b0bbb1;
-    margin-top: 8px;
+    margin-top: 6px;
 }
 .service-footer {
     border-top: 1px solid #edf1ec;
-    margin-top: 21px;
-    padding-top: 17px;
+    margin-top: 13px;
+    padding-top: 12px;
     display: flex;
     justify-content: space-between;
     gap: 10px;
-    align-items: center;
+    align-items: start;
     color: #a1aba2;
     font:
         11px 'DM Mono',
@@ -1015,8 +1138,14 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     gap: 6px;
+    min-width: 0;
     color: #387559;
     text-decoration: none;
+    overflow-wrap: anywhere;
+}
+.service-footer > span {
+    flex: none;
+    text-align: right;
 }
 .service-footer a:hover {
     text-decoration: underline;
@@ -1024,8 +1153,35 @@ onUnmounted(() => {
 .service-error {
     color: #b35a3e;
     font-size: 11px;
-    margin-top: 12px;
+    margin-top: 9px;
     overflow-wrap: anywhere;
+}
+.search-empty {
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+    gap: 7px;
+    padding: 39px 20px;
+    border: 1px dashed #d5e2d6;
+    border-radius: 13px;
+    background: #fff;
+    color: #87a08e;
+    text-align: center;
+    font-size: 12px;
+}
+.search-empty strong {
+    margin-top: 3px;
+    color: var(--ink);
+    font-size: 15px;
+}
+.search-empty button {
+    margin-top: 9px;
+    padding: 7px 13px;
+    border: 1px solid #cce2d1;
+    border-radius: 7px;
+    background: #f1f8f2;
+    color: #327852;
+    cursor: pointer;
 }
 .legend {
     display: flex;
@@ -1276,6 +1432,11 @@ onUnmounted(() => {
     color: #457b5b;
     font-weight: 700;
 }
+@media (max-width: 900px) {
+    .services-list {
+        grid-template-columns: 1fr;
+    }
+}
 @media (max-width: 760px) {
     .site-shell {
         padding: 0 18px;
@@ -1321,12 +1482,24 @@ onUnmounted(() => {
     .metric-foot {
         font-size: 10px;
     }
+    .services-section > .section-heading {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 13px;
+    }
+    .service-tools {
+        align-items: stretch;
+    }
+    .service-search {
+        width: 100%;
+        box-sizing: border-box;
+    }
     .service-card {
-        padding: 21px 18px;
+        padding: 17px 18px 15px;
     }
     .service-bar {
         gap: 2px;
-        height: 24px;
+        height: 19px;
     }
     .service-rate strong {
         font-size: 17px;
@@ -1369,8 +1542,11 @@ onUnmounted(() => {
     .metric:last-child {
         grid-column: span 2;
     }
+    .service-top {
+        flex-direction: column;
+    }
     .service-rate {
-        display: none;
+        text-align: left;
     }
     .service-identity {
         gap: 10px;

@@ -40,6 +40,7 @@ type StatusData = {
     incidents: Incident[];
     lastCheckedAt: string | null;
     historyDays: number;
+    canManage?: boolean;
 };
 const props = defineProps<StatusData>();
 const data = ref<StatusData>({
@@ -185,6 +186,12 @@ onUnmounted(() => {
                     </div>
                 </div>
                 <div class="header-right">
+                    <a
+                        v-if="props.canManage"
+                        class="admin-link"
+                        href="/admin/monitors"
+                        >管理监测</a
+                    >
                     <span class="header-live"
                         ><span class="live-pulse"></span> 每 2
                         分钟自动探测</span
@@ -1405,5 +1412,14 @@ onUnmounted(() => {
 .state-tag.unknown {
     background: #eef1ee;
     color: #627168;
+}
+.admin-link {
+    color: #276d4c;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+}
+.admin-link:hover {
+    text-decoration: underline;
 }
 </style>

@@ -1,6 +1,6 @@
 # 校园服务状态
 
-Laravel + Vue 状态页。从校内服务器每 2 分钟探测学校官网、党建平台和 WebVPN，公开显示最近 30 天的可访问性。连续两次定时探测失败确认故障，一次成功即恢复；故障和恢复邮件通过[消息平台邮件 API](http://messager.test/docs/email)异步发送。
+Laravel + Vue 状态页。从校内服务器每 2 分钟探测已启用的服务，初始清单包括学校官网、党建平台和 WebVPN；公开显示最近 30 天的可访问性。连续两次定时探测失败确认故障，一次成功即恢复；故障和恢复邮件通过[消息平台邮件 API](http://messager.test/docs/email)异步发送。
 
 ## 本地开发
 
@@ -19,7 +19,7 @@ php artisan serve
 
 1. 在服务器上准备 PHP 8.3+、所需 PHP 扩展、Composer、Node.js、MySQL／MariaDB，以及可访问三项监测服务和消息平台的网络。Web 服务器站点根目录指向项目的 `public/`，域名使用 `https://status.zufedfc.edu.cn`。只有 `storage/` 和 `bootstrap/cache/` 需要 Web／CLI 用户的写权限。
 2. 从 Git 仓库拉取项目。首次部署时复制 `.env.example` 为 `.env` 并生成 `APP_KEY`；以后更新必须保留现有 `.env`、数据库和 `APP_KEY`。
-3. 在服务器 `.env` 设置 `APP_ENV=production`、`APP_DEBUG=false`、`APP_URL=https://status.zufedfc.edu.cn`、MySQL 连接信息及下面的邮件配置。密钥和真实收件人信息只存服务器环境，不提交 Git。
+3. 在服务器 `.env` 设置 `APP_ENV=production`、`APP_DEBUG=false`、`APP_URL=https://status.zufedfc.edu.cn`、MySQL 连接信息、`MONITOR_ADMIN_EMAILS` 及下面的邮件配置。密钥和真实收件人信息只存服务器环境，不提交 Git。
 4. 在项目目录运行：
 
 ```bash
@@ -32,6 +32,12 @@ php artisan optimize:clear
 php artisan config:cache
 php artisan schedule:list
 ```
+
+迁移会把原来的三项服务导入 `monitor_services` 表。已有管理员账号的邮箱加入 `MONITOR_ADMIN_EMAILS` 后，执行 `php artisan monitor:admin:activate 管理员邮箱` 验证该账号，再用原密码登录 `/admin/monitors`。该命令只激活数据库中已经存在且在白名单内的账号；公开注册现已关闭。部署时请确认生产数据库中确有该账号。白名单多个邮箱用英文逗号分隔，例如 `MONITOR_ADMIN_EMAILS=one@example.edu.cn,two@example.edu.cn`。
+
+管理页可新增、编辑、停用及重新启用监测项。新项目等待下一次两分钟任务首次检测。更换网址或重新启用时建立新监测周期，旧探测记录保留至 30 天清理期满；停用或更换网址会结束旧故障周期，并取消尚未提交的告警。已提交的消息平台任务继续追踪投递状态。
+
+初始目标仅允许 `zufedfc.edu.cn` 及其子域名，或 `10.0.0.0/8` 地址；端口默认限制为 80、443、8080、8443。需要额外认证跳转域名时，在服务器配置 `MONITOR_ALLOWED_REDIRECT_HOSTS=login.example.edu.cn`，多个域名用英文逗号分隔。可通过 `MONITOR_ALLOWED_PORTS` 调整端口列表。每次连接和跳转都会检查解析地址，拒绝本机、链路本地和云元数据地址。改动环境变量后运行 `php artisan config:cache`。
 
 5. 给运行 PHP 的用户配置一条 cron，每分钟执行 Laravel 调度器；请将示例目录和 PHP 路径改为服务器实际路径：
 

@@ -18,7 +18,7 @@ class MonitorIncidentTracker
     {
         DB::transaction(function () use ($service, $check) {
             $incident = MonitorIncident::where('service_key', $service['key'])
-                ->whereNull('recovered_at')
+                ->whereNull('closed_at')
                 ->latest('id')
                 ->lockForUpdate()
                 ->first();
@@ -58,7 +58,11 @@ class MonitorIncidentTracker
                 return;
             }
 
-            $incident->update(['recovered_at' => $check->checked_at]);
+            $incident->update([
+                'recovered_at' => $check->checked_at,
+                'closed_at' => $check->checked_at,
+                'closed_reason' => 'recovered',
+            ]);
             if ($incident->confirmed_at) {
                 $this->enqueue($incident, $service, $check, 'recovery');
                 foreach ($incident->alerts()->where('kind', 'outage')->get() as $outage) {

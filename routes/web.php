@@ -1,10 +1,20 @@
 <?php
 
+use App\Http\Controllers\Admin\MonitorServiceController;
 use App\Http\Controllers\StatusController;
+use App\Http\Middleware\EnsureMonitorAdmin;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [StatusController::class, 'index'])->name('home');
 Route::get('/api/status', [StatusController::class, 'show']);
+
+Route::middleware(['auth', 'verified', EnsureMonitorAdmin::class])->prefix('admin')->name('admin.')->group(function () {
+    Route::get('monitors', [MonitorServiceController::class, 'index'])->name('monitors.index');
+    Route::post('monitors', [MonitorServiceController::class, 'store'])->name('monitors.store');
+    Route::put('monitors/{monitor}', [MonitorServiceController::class, 'update'])->name('monitors.update');
+    Route::post('monitors/{monitor}/disable', [MonitorServiceController::class, 'disable'])->name('monitors.disable');
+    Route::post('monitors/{monitor}/enable', [MonitorServiceController::class, 'enable'])->name('monitors.enable');
+});
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::inertia('dashboard', 'Dashboard')->name('dashboard');

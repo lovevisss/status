@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\MonitorAlert;
 use App\Models\MonitorIncident;
+use App\Models\MonitorService;
 use App\Services\MonitorAlertDispatcher;
 use App\Services\MonitorRunner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -20,10 +21,7 @@ class MonitorAlertsTest extends TestCase
     {
         parent::setUp();
 
-        config()->set('monitors.services', [[
-            'key' => 'portal', 'name' => '学校官网', 'description' => '学校主页',
-            'url' => 'https://www.zufedfc.edu.cn',
-        ]]);
+        MonitorService::where('key', '!=', 'portal')->delete();
         config()->set('monitors.alerts', [
             'api_url' => 'http://messager.test/api/v1/notifications',
             'api_token' => 'test-token',

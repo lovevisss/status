@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\MonitorCheck;
 use App\Models\MonitorIncident;
+use App\Models\MonitorService;
+use App\Services\MonitorAdminAccess;
 use App\Services\MonitorServiceStats;
 use Illuminate\Http\JsonResponse;
 use Inertia\Inertia;
@@ -11,9 +13,12 @@ use Inertia\Response;
 
 class StatusController extends Controller
 {
-    public function index(): Response
+    public function index(MonitorAdminAccess $access): Response
     {
-        return Inertia::render('Welcome', $this->data());
+        return Inertia::render('Welcome', [
+            ...$this->data(),
+            'canManage' => $access->allows(request()->user()),
+        ]);
     }
 
     public function show(): JsonResponse
@@ -24,7 +29,9 @@ class StatusController extends Controller
     /** @return array<string, mixed> */
     private function data(): array
     {
-        $services = config('monitors.services', []);
+        $services = MonitorService::enabled()->orderBy('sort_order')->orderBy('id')->get()
+            ->map(fn (MonitorService $service) => $service->only(['key', 'name', 'description', 'url']))
+            ->all();
         /** @var array<string, MonitorServiceStats> $stats */
         $stats = [];
         foreach ($services as $service) {
@@ -40,7 +47,7 @@ class StatusController extends Controller
             $stats[$check->service_key]->add($check);
         }
 
-        $openIncidents = MonitorIncident::whereNull('recovered_at')->latest('id')->get()
+        $openIncidents = MonitorIncident::whereNull('closed_at')->latest('id')->get()
             ->unique('service_key')->keyBy('service_key');
         $items = [];
         foreach ($services as $service) {
@@ -84,6 +91,7 @@ class StatusController extends Controller
                 'service' => $names[$incident->service_key] ?? $incident->service_key,
                 'confirmed_at' => $incident->confirmed_at?->toIso8601String(),
                 'recovered_at' => $incident->recovered_at?->toIso8601String(),
+                'closed_reason' => $incident->closed_reason,
             ];
         }
 

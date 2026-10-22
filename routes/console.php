@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\MonitorIncident;
+use App\Models\User;
 use App\Services\MonitorAlertDispatcher;
 use App\Services\MonitorRecipients;
 use App\Services\MonitorRunner;
@@ -67,3 +68,29 @@ Artisan::command('monitor:test-email', function (MonitorRecipients $recipients) 
 
     return 0;
 })->purpose('Queue clearly labeled test emails for all monitor recipients');
+
+Artisan::command('monitor:admin:activate {email}', function (string $email) {
+    $emails = array_filter(array_map(
+        fn (string $value) => strtolower(trim($value)),
+        explode(',', (string) config('monitors.admin_emails', '')),
+    ));
+    if (! in_array(strtolower($email), $emails, true)) {
+        $this->error('该邮箱未列入 MONITOR_ADMIN_EMAILS。');
+
+        return 1;
+    }
+
+    $user = User::where('email', $email)->first();
+    if (! $user) {
+        $this->error('找不到该账号，请先确认生产数据库和邮箱地址。');
+
+        return 1;
+    }
+
+    if (! $user->hasVerifiedEmail()) {
+        $user->forceFill(['email_verified_at' => now()])->save();
+    }
+    $this->info('管理员账号邮箱已验证并可通过白名单进入监测管理页。');
+
+    return 0;
+})->purpose('Verify an existing allowlisted monitor administrator account');

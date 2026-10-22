@@ -1,6 +1,9 @@
 <?php
 
 return [
+    'admin_emails' => env('MONITOR_ADMIN_EMAILS', ''),
+    'redirect_hosts' => env('MONITOR_ALLOWED_REDIRECT_HOSTS', ''),
+    'allowed_ports' => env('MONITOR_ALLOWED_PORTS', '80,443,8080,8443'),
     'alerts' => [
         'api_url' => env('MONITOR_ALERT_API_URL'),
         'api_token' => env('MONITOR_ALERT_API_TOKEN'),

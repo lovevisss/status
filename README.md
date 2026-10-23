@@ -27,8 +27,8 @@ git pull --ff-only
 composer install --no-dev --prefer-dist --optimize-autoloader
 npm ci
 npm run build
-php artisan migrate --force
 php artisan optimize:clear
+php artisan migrate --force
 php artisan config:cache
 php artisan schedule:list
 ```

@@ -1,6 +1,6 @@
 # 校园服务状态
 
-Laravel + Vue 状态页。从校内服务器每 2 分钟探测已启用的服务，初始清单包括学校官网、党建平台和 WebVPN；公开显示最近 30 天的可访问性。连续两次定时探测失败确认故障，一次成功即恢复；故障和恢复邮件通过[消息平台邮件 API](http://messager.test/docs/email)异步发送。
+Laravel + Vue 状态页。从校内服务器每 2 分钟探测已启用的服务，初始清单包括学校官网、党建平台和 WebVPN；公开显示最近 30 天的可访问性。连续两次定时探测失败确认故障，一次成功即恢复；故障和恢复邮件通过[消息平台邮件 API](https://messenger.zufedfc.edu.cn/docs/email)异步发送。
 
 ## 本地开发
 
@@ -19,7 +19,7 @@ php artisan serve
 
 1. 在服务器上准备 PHP 8.3+、所需 PHP 扩展、Composer、Node.js、MySQL／MariaDB，以及可访问三项监测服务和消息平台的网络。Web 服务器站点根目录指向项目的 `public/`，域名使用 `https://status.zufedfc.edu.cn`。只有 `storage/` 和 `bootstrap/cache/` 需要 Web／CLI 用户的写权限。
 2. 从 Git 仓库拉取项目。首次部署时复制 `.env.example` 为 `.env` 并生成 `APP_KEY`；以后更新必须保留现有 `.env`、数据库和 `APP_KEY`。
-3. 在服务器 `.env` 设置 `APP_ENV=production`、`APP_DEBUG=false`、`APP_URL=https://status.zufedfc.edu.cn`、MySQL 连接信息、`MONITOR_ADMIN_EMAILS` 及下面的邮件配置。密钥和真实收件人信息只存服务器环境，不提交 Git。
+3. 在服务器 `.env` 设置 `APP_ENV=production`、`APP_DEBUG=false`、`APP_URL=https://status.zufedfc.edu.cn`、MySQL 连接信息、`MONITOR_ADMIN_EMAILS` 及下面的邮件配置。密钥只存服务器环境，不提交 Git。本次已在聊天中共享的旧密钥须在消息平台轮换；服务器使用轮换后的新密钥。
 4. 在项目目录运行：
 
 ```bash
@@ -33,7 +33,7 @@ php artisan config:cache
 php artisan schedule:list
 ```
 
-迁移会把原来的三项服务导入 `monitor_services` 表。已有管理员账号的邮箱加入 `MONITOR_ADMIN_EMAILS` 后，执行 `php artisan monitor:admin:activate 管理员邮箱` 验证该账号，再用原密码登录 `/admin/monitors`。该命令只激活数据库中已经存在且在白名单内的账号；公开注册现已关闭。部署时请确认生产数据库中确有该账号。白名单多个邮箱用英文逗号分隔，例如 `MONITOR_ADMIN_EMAILS=one@example.edu.cn,two@example.edu.cn`。
+首次迁移会把原来的三项服务导入 `monitor_services` 表。本次收件人迁移会一次性读取当时的 `MONITOR_ALERT_RECIPIENTS`，导入 `monitor_recipients` 表；迁移完成后，数据库成为唯一的通知名单来源。请在运行迁移前保留服务器原有名单，迁移后到 `/admin/recipients` 核对人数和学工号，确认无误后可从 `.env` 删除旧名单变量。已有管理员账号的邮箱加入 `MONITOR_ADMIN_EMAILS` 后，执行 `php artisan monitor:admin:activate 管理员邮箱` 验证该账号，再用原密码登录 `/admin/monitors`。该命令只激活数据库中已经存在且在白名单内的账号；公开注册现已关闭。部署时请确认生产数据库中确有该账号。白名单多个邮箱用英文逗号分隔，例如 `MONITOR_ADMIN_EMAILS=one@example.edu.cn,two@example.edu.cn`。
 
 管理页可新增、编辑、停用及重新启用监测项。新项目等待下一次两分钟任务首次检测。更换网址或重新启用时建立新监测周期，旧探测记录保留至 30 天清理期满；停用或更换网址会结束旧故障周期，并取消尚未提交的告警。已提交的消息平台任务继续追踪投递状态。
 
@@ -50,16 +50,15 @@ cron 负责每 2 分钟探测一次、每分钟派发并查询邮件状态。不
 ## 邮件配置
 
 ```dotenv
-MONITOR_ALERT_API_URL=http://messager.test/api/v1/notifications
-MONITOR_ALERT_API_TOKEN=消息平台签发的Bearer密钥
-MONITOR_ALERT_RECIPIENTS='[{"id":"20230001","email":"admin1@example.edu.cn"},{"id":"20230002","email":"admin2@example.edu.cn"}]'
+MONITOR_ALERT_API_URL=https://messenger.zufedfc.edu.cn/api/v1/notifications
+MONITOR_ALERT_API_TOKEN=轮换后的消息平台Bearer密钥
 ```
 
-`MONITOR_ALERT_RECIPIENTS` 是 JSON 数组，学工号不可重复。所有人接收全部服务的通知；事件发生时固定收件人名单，每人独立保存提交编号、平台任务 ID、状态和错误。更改 `.env` 后运行 `php artisan config:cache`。消息平台自己的邮件队列 worker 必须运行；平台返回 `accepted` 表示 SMTP 已接受，不保证进入收件箱。
+`MONITOR_ALERT_API_URL` 应设置为 `https://messenger.zufedfc.edu.cn/api/v1/notifications`。升级旧部署时务必替换 `.env` 中的旧地址，然后运行 `php artisan config:cache`。管理员在 `/admin/recipients` 添加、修改、停用或重新启用学工号；邮箱选填，不填则由消息平台按学工号查找，填写则覆盖平台快照中的邮箱。学工号必须存在于平台每日同步的人员快照。所有已启用人员接收全部服务通知；事件发生时固定收件人快照，之后更改或停用名单不影响已有邮件。每人独立保存提交编号、平台任务 ID、状态和错误。消息平台自己的邮件队列 worker 必须运行；平台返回 `accepted` 表示 SMTP 已接受，不保证进入收件箱。
 
 网络超时和限流会用原 `request_id` 延迟重试，最多 24 小时。鉴权、参数和平台最终投递失败保留在 `monitor_alerts` 表及 Laravel 日志中，需人工处理。服务恢复前尚未提交的故障邮件会被取消，其对应恢复邮件也取消。收件人配置缺失或无效时，事件保留配置错误记录，不发邮件。
 
-上线前可运行 `php artisan monitor:test-email` 创建明确标注“测试”的邮件，再运行 `php artisan monitor:dispatch-alerts`；测试事件不出现在公开异常记录中。等待消息平台异步处理后，再运行派发命令查询最终状态。测试实际服务故障请使用模拟目标，不要中断生产服务。
+管理员可在 `/admin/recipients` 对单人发送明确标注“测试”的邮件，每人每 5 分钟最多一次。后台显示该人最近一次测试邮件的任务状态与错误。也可运行 `php artisan monitor:test-email` 为全部已启用人员创建测试邮件，再运行 `php artisan monitor:dispatch-alerts`；测试事件不出现在公开异常记录中。等待消息平台异步处理后，再运行派发命令查询最终状态，并确认目标收件箱收到邮件。测试实际服务故障请使用模拟目标，不要中断生产服务。
 
 ## 判定与记录
 
@@ -72,6 +71,7 @@ MONITOR_ALERT_RECIPIENTS='[{"id":"20230001","email":"admin1@example.edu.cn"},{"i
 
 ```bash
 php artisan test
+composer types:check
 npm run check
 npm run types:check
 npm run build

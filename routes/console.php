@@ -1,14 +1,13 @@
 <?php
 
-use App\Models\MonitorIncident;
+use App\Models\MonitorRecipient;
 use App\Models\User;
 use App\Services\MonitorAlertDispatcher;
-use App\Services\MonitorRecipients;
 use App\Services\MonitorRunner;
+use App\Services\MonitorTestMailQueue;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
-use Illuminate\Support\Str;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -28,43 +27,25 @@ Artisan::command('monitor:dispatch-alerts', function (MonitorAlertDispatcher $di
 
 Schedule::command('monitor:dispatch-alerts')->everyMinute()->withoutOverlapping();
 
-Artisan::command('monitor:test-email', function (MonitorRecipients $recipients) {
-    $list = $recipients->all();
-    if ($list === null) {
-        $this->error('MONITOR_ALERT_RECIPIENTS 未配置或格式错误。');
+Artisan::command('monitor:test-email', function (MonitorTestMailQueue $queue) {
+    $recipients = MonitorRecipient::where('is_enabled', true)->get();
+    if ($recipients->isEmpty()) {
+        $this->error('数据库中没有已启用的邮件收件人。');
 
         return 1;
     }
 
-    if (! filter_var(config('monitors.alerts.api_url'), FILTER_VALIDATE_URL)
-        || ! is_string(config('monitors.alerts.api_token'))
-        || config('monitors.alerts.api_token') === '') {
-        $this->error('消息平台 API 地址或密钥未配置。');
+    if (! $queue->configured()) {
+        $this->error('消息平台 HTTPS 地址或密钥未配置。');
 
         return 1;
     }
 
-    $incident = MonitorIncident::create([
-        'incident_key' => (string) Str::ulid(),
-        'service_key' => '__test__',
-        'started_at' => now(),
-        'confirmed_at' => now(),
-        'recovered_at' => now(),
-    ]);
-    foreach ($list as $recipient) {
-        $incident->alerts()->create([
-            'kind' => 'test',
-            'request_id' => "campus_status:test:{$incident->incident_key}_{$recipient['id']}",
-            'status' => 'pending',
-            'recipient_id' => $recipient['id'],
-            'recipient_email' => $recipient['email'],
-            'title' => '【测试】校园服务状态邮件告警',
-            'content' => "这是一封测试邮件，不代表真实服务故障。\n状态页面：".config('app.url'),
-            'next_attempt_at' => now(),
-        ]);
+    foreach ($recipients as $recipient) {
+        $queue->queue($recipient, respectCooldown: false);
     }
 
-    $this->info('已为 '.count($list).' 位收件人创建测试邮件记录。请运行 monitor:dispatch-alerts 并查询投递状态。');
+    $this->info('已为 '.$recipients->count().' 位收件人创建测试邮件记录。请运行 monitor:dispatch-alerts 并查询投递状态。');
 
     return 0;
 })->purpose('Queue clearly labeled test emails for all monitor recipients');

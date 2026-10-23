@@ -107,9 +107,18 @@ const dateLabel = (value: string) =>
                         ><small>MONITOR CONTROL</small></span
                     >
                 </div>
-                <a class="back-link" href="/"
-                    ><ArrowLeft :size="15" /> 返回公开状态页</a
-                >
+                <nav class="admin-links" aria-label="管理导航">
+                    <a
+                        class="current"
+                        href="/admin/monitors"
+                        aria-current="page"
+                        >监测服务</a
+                    >
+                    <a href="/admin/recipients">邮件收件人</a>
+                    <a class="back-link" href="/"
+                        ><ArrowLeft :size="15" /> 返回公开状态页</a
+                    >
+                </nav>
             </header>
 
             <main>
@@ -396,6 +405,24 @@ const dateLabel = (value: string) =>
     color: #4e755e;
     font-size: 12px;
     text-decoration: none;
+}
+.admin-links {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+.admin-links > a {
+    color: #718c78;
+    font-size: 12px;
+    text-decoration: none;
+    white-space: nowrap;
+}
+.admin-links > a.current {
+    color: #286c4b;
+    font-weight: 700;
+}
+.admin-links > a:hover {
+    text-decoration: underline;
 }
 .back-link:hover {
     text-decoration: underline;
@@ -791,7 +818,13 @@ footer {
     .brand small {
         font-size: 8px;
     }
-    .back-link {
+    .admin-links {
+        gap: 10px;
+    }
+    .admin-links > a {
+        font-size: 10px;
+    }
+    .admin-links > .back-link {
         font-size: 0;
         gap: 0;
     }

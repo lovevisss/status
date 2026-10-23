@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\MonitorAlert;
 use App\Models\MonitorIncident;
+use App\Models\MonitorRecipient;
 use App\Models\MonitorService;
 use App\Services\MonitorAlertDispatcher;
 use App\Services\MonitorRunner;
@@ -23,13 +24,11 @@ class MonitorAlertsTest extends TestCase
 
         MonitorService::where('key', '!=', 'portal')->delete();
         config()->set('monitors.alerts', [
-            'api_url' => 'http://messager.test/api/v1/notifications',
+            'api_url' => 'https://messenger.zufedfc.edu.cn/api/v1/notifications',
             'api_token' => 'test-token',
-            'recipients' => json_encode([
-                ['id' => '20230001', 'email' => 'one@example.edu.cn'],
-                ['id' => '20230002', 'email' => 'two@example.edu.cn'],
-            ]),
         ]);
+        MonitorRecipient::create(['person_id' => '20230001', 'email' => 'one@example.edu.cn', 'is_enabled' => true]);
+        MonitorRecipient::create(['person_id' => '20230002', 'email' => 'two@example.edu.cn', 'is_enabled' => true]);
     }
 
     public function test_two_failures_create_one_alert_per_recipient_and_one_success_recovers(): void
@@ -124,6 +123,38 @@ class MonitorAlertsTest extends TestCase
 
         $this->assertSame(4, MonitorAlert::where('status', 'cancelled')->count());
         Http::assertSentCount(3);
+    }
+
+    public function test_service_unavailable_retries_and_async_delivery_failure_is_recorded(): void
+    {
+        $alert = $this->makeAlert();
+        $requestIds = [];
+        Http::fake(function (Request $request) use (&$requestIds) {
+            if ($request->method() === 'GET') {
+                return Http::response([
+                    'status' => 'failed',
+                    'deliveries' => [['status' => 'failed', 'error' => '收件人未收录']],
+                ]);
+            }
+
+            $requestIds[] = $request->data()['request_id'];
+
+            return count($requestIds) === 1
+                ? Http::response(['message' => 'unavailable'], 503)
+                : Http::response(['id' => 'platform-job-2', 'status' => 'queued'], 202);
+        });
+
+        $dispatcher = app(MonitorAlertDispatcher::class);
+        $dispatcher->run();
+        $this->assertSame('pending', $alert->fresh()->status);
+        $this->travel(2)->minutes();
+        $dispatcher->run();
+        $this->assertSame([$alert->request_id, $alert->request_id], $requestIds);
+        $this->travel(2)->minutes();
+        $dispatcher->run();
+        $this->assertSame('failed', $alert->fresh()->status);
+        $this->assertSame('收件人未收录', $alert->fresh()->last_error);
+        $this->assertSame('platform-job-2', $alert->fresh()->platform_task_id);
     }
 
     public function test_terminal_failure_and_retry_expiry_are_recorded(): void

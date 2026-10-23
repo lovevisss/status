@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\MonitorRecipientController;
 use App\Http\Controllers\Admin\MonitorServiceController;
 use App\Http\Controllers\StatusController;
 use App\Http\Middleware\EnsureMonitorAdmin;
@@ -14,6 +15,12 @@ Route::middleware(['auth', 'verified', EnsureMonitorAdmin::class])->prefix('admi
     Route::put('monitors/{monitor}', [MonitorServiceController::class, 'update'])->name('monitors.update');
     Route::post('monitors/{monitor}/disable', [MonitorServiceController::class, 'disable'])->name('monitors.disable');
     Route::post('monitors/{monitor}/enable', [MonitorServiceController::class, 'enable'])->name('monitors.enable');
+    Route::get('recipients', [MonitorRecipientController::class, 'index'])->name('recipients.index');
+    Route::post('recipients', [MonitorRecipientController::class, 'store'])->name('recipients.store');
+    Route::put('recipients/{recipient}', [MonitorRecipientController::class, 'update'])->name('recipients.update');
+    Route::post('recipients/{recipient}/disable', [MonitorRecipientController::class, 'disable'])->name('recipients.disable');
+    Route::post('recipients/{recipient}/enable', [MonitorRecipientController::class, 'enable'])->name('recipients.enable');
+    Route::post('recipients/{recipient}/test', [MonitorRecipientController::class, 'test'])->name('recipients.test');
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {

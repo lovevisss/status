@@ -64,6 +64,7 @@ class MonitorAlertDispatcher
         $apiUrl = config('monitors.alerts.api_url');
         $apiToken = config('monitors.alerts.api_token');
         if (! is_string($apiUrl) || filter_var($apiUrl, FILTER_VALIDATE_URL) === false
+            || parse_url($apiUrl, PHP_URL_SCHEME) !== 'https'
             || ! is_string($apiToken) || $apiToken === '') {
             return null;
         }
@@ -100,13 +101,17 @@ class MonitorAlertDispatcher
     /** @param array{api_url: string, api_token: string} $config */
     private function submit(MonitorAlert $alert, array $config): void
     {
-        if (! $alert->recipient_id || ! $alert->recipient_email) {
+        if ($alert->recipient_id === null || $alert->recipient_id === '') {
             $this->fail($alert, '收件人快照缺失，需人工处理');
 
             return;
         }
 
         $alert->increment('attempts');
+        $recipient = ['id' => $alert->recipient_id];
+        if ($alert->recipient_email) {
+            $recipient['email'] = $alert->recipient_email;
+        }
 
         try {
             $response = Http::withToken($config['api_token'])->acceptJson()
@@ -116,10 +121,7 @@ class MonitorAlertDispatcher
                     'channels' => ['email'],
                     'title' => $alert->title,
                     'content' => $alert->content,
-                    'recipients' => [[
-                        'id' => $alert->recipient_id,
-                        'email' => $alert->recipient_email,
-                    ]],
+                    'recipients' => [$recipient],
                 ]);
 
             if (in_array($response->status(), [200, 202], true) && is_string($response->json('id'))) {

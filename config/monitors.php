@@ -5,7 +5,7 @@ return [
     'redirect_hosts' => env('MONITOR_ALLOWED_REDIRECT_HOSTS', ''),
     'allowed_ports' => env('MONITOR_ALLOWED_PORTS', '80,443,8080,8443'),
     'alerts' => [
-        'api_url' => env('MONITOR_ALERT_API_URL'),
+        'api_url' => env('MONITOR_ALERT_API_URL', 'https://messenger.zufedfc.edu.cn/api/v1/notifications'),
         'api_token' => env('MONITOR_ALERT_API_TOKEN'),
         'recipients' => env('MONITOR_ALERT_RECIPIENTS'),
     ],

@@ -108,8 +108,8 @@ class MonitorIncidentTracker
             ->map(fn (MonitorAlert $alert) => ['id' => $alert->recipient_id, 'email' => $alert->recipient_email])
             ->all();
 
-        if ($recipients === null || $recipients === []) {
-            Log::error('Monitor email recipients are missing or invalid. Set MONITOR_ALERT_RECIPIENTS to a JSON array of unique id/email pairs.');
+        if ($recipients === []) {
+            Log::error('No enabled monitor email recipients are configured in the database.');
             MonitorAlert::create([
                 'monitor_incident_id' => $incident->id,
                 'kind' => $kind,
@@ -117,7 +117,7 @@ class MonitorIncidentTracker
                 'status' => 'configuration_error',
                 'title' => $title,
                 'content' => $content,
-                'last_error' => 'MONITOR_ALERT_RECIPIENTS 未配置或格式错误',
+                'last_error' => '数据库中没有已启用的邮件收件人',
             ]);
 
             return;
@@ -127,7 +127,7 @@ class MonitorIncidentTracker
             MonitorAlert::create([
                 'monitor_incident_id' => $incident->id,
                 'kind' => $kind,
-                'request_id' => "campus_status:{$kind}:{$incident->incident_key}_{$recipient['id']}",
+                'request_id' => MonitorRequestIds::forRecipient($kind, $incident->incident_key, $recipient['id']),
                 'status' => 'pending',
                 'recipient_id' => $recipient['id'],
                 'recipient_email' => $recipient['email'],

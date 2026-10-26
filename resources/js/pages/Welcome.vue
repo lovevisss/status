@@ -42,6 +42,7 @@ type Incident = {
     service: string;
     confirmed_at: string;
     recovered_at: string | null;
+    closed_at: string | null;
 };
 type Maintenance = {
     id: number;
@@ -654,10 +655,12 @@ onUnmounted(() => {
                         </div>
                         <div class="events-card">
                             <template v-if="data.incidents.length"
-                                ><div
+                                ><a
                                     v-for="incident in data.incidents"
                                     :key="incident.key"
                                     class="event-row"
+                                    :href="`/incidents/${encodeURIComponent(incident.key)}`"
+                                    :aria-label="`查看${incident.service}异常详情`"
                                 >
                                     <span class="event-mark"></span>
                                     <div>
@@ -668,13 +671,15 @@ onUnmounted(() => {
                                         ><span>{{
                                             incident.recovered_at
                                                 ? `已于 ${displayDate(incident.recovered_at)} 恢复`
-                                                : '故障持续中'
+                                                : incident.closed_at
+                                                  ? `监测已于 ${displayDate(incident.closed_at)} 终止`
+                                                  : '故障持续中'
                                         }}</span>
                                     </div>
                                     <time>{{
                                         displayDate(incident.confirmed_at)
                                     }}</time>
-                                </div></template
+                                </a></template
                             >
                             <div v-else class="empty-events">
                                 <div class="empty-icon">
@@ -1459,6 +1464,22 @@ onUnmounted(() => {
     padding: 21px 0;
     border-bottom: 1px solid #edf0eb;
     align-items: start;
+    color: inherit;
+    text-decoration: none;
+    border-radius: 8px;
+    transition:
+        background-color 0.15s,
+        padding 0.15s;
+}
+.event-row:hover,
+.event-row:focus-visible {
+    background: #f4f8f3;
+    padding-left: 8px;
+    padding-right: 8px;
+    outline: none;
+}
+.event-row:focus-visible {
+    box-shadow: 0 0 0 2px #75ac83;
 }
 .event-row:last-child {
     border-bottom: 0;

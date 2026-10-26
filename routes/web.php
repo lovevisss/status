@@ -3,12 +3,14 @@
 use App\Http\Controllers\Admin\MonitorMaintenanceController;
 use App\Http\Controllers\Admin\MonitorRecipientController;
 use App\Http\Controllers\Admin\MonitorServiceController;
+use App\Http\Controllers\IncidentController;
 use App\Http\Controllers\StatusController;
 use App\Http\Middleware\EnsureMonitorAdmin;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [StatusController::class, 'index'])->name('home');
 Route::get('/api/status', [StatusController::class, 'show']);
+Route::get('/incidents/{key}', [IncidentController::class, 'show'])->name('incidents.show');
 
 Route::middleware(['auth', 'verified', EnsureMonitorAdmin::class])->prefix('admin')->name('admin.')->group(function () {
     Route::get('monitors', [MonitorServiceController::class, 'index'])->name('monitors.index');

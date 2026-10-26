@@ -118,6 +118,7 @@ class StatusController extends Controller
                 'service' => $names[$incident->service_key] ?? $incident->service_key,
                 'confirmed_at' => $incident->confirmed_at?->toIso8601String(),
                 'recovered_at' => $incident->recovered_at?->toIso8601String(),
+                'closed_at' => $incident->closed_at?->toIso8601String(),
                 'closed_reason' => $incident->closed_reason,
             ];
         }

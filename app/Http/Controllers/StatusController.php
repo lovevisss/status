@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\MonitorCheck;
 use App\Models\MonitorIncident;
+use App\Models\MonitorMaintenanceWindow;
 use App\Models\MonitorService;
 use App\Services\MonitorAdminAccess;
 use App\Services\MonitorServiceStats;
@@ -30,8 +31,30 @@ class StatusController extends Controller
     private function data(): array
     {
         $services = MonitorService::enabled()->orderBy('sort_order')->orderBy('id')->get()
-            ->map(fn (MonitorService $service) => $service->only(['key', 'name', 'description', 'url']))
+            ->map(fn (MonitorService $service) => $service->only(['id', 'key', 'name', 'description', 'url']))
             ->all();
+        $currentById = collect($services)->keyBy('id');
+        $maintenance = MonitorMaintenanceWindow::with('services:id,name')
+            ->whereNull('cancelled_at')->where('starts_at', '<=', now()->addDays(7))
+            ->where('ends_at', '>=', now()->subDays(30))->orderBy('starts_at')->get()
+            ->map(function (MonitorMaintenanceWindow $window) use ($currentById) {
+                $affected = $window->services->filter(fn (MonitorService $service) => $currentById->has($service->id));
+                $end = $window->effectiveEnd();
+                if ($affected->isEmpty() || $end->lt(now()->subDays(30))) {
+                    return null;
+                }
+
+                return [
+                    'id' => $window->id,
+                    'title' => $window->title,
+                    'description' => $window->description,
+                    'starts_at' => $window->starts_at->toIso8601String(),
+                    'ends_at' => $end->toIso8601String(),
+                    'status' => $window->starts_at->gt(now()) ? 'planned' : ($end->gt(now()) ? 'active' : 'completed'),
+                    'service_ids' => $affected->pluck('id')->all(),
+                    'service_names' => $affected->pluck('name')->all(),
+                ];
+            })->filter()->values()->all();
         /** @var array<string, MonitorServiceStats> $stats */
         $stats = [];
         foreach ($services as $service) {
@@ -55,12 +78,14 @@ class StatusController extends Controller
             $latest = $entry->latest;
             $stale = ! $latest || $latest->checked_at->lt(now()->subMinutes(5));
             $incident = $openIncidents->get($service['key']);
-            $state = $stale ? 'unknown' : ($latest->is_up ? 'up' : ($incident?->confirmed_at ? 'down' : 'pending'));
+            $inMaintenance = collect($maintenance)->contains(fn (array $window) => $window['status'] === 'active' && in_array($service['id'], $window['service_ids'], true));
+            $state = $stale ? 'unknown' : ($incident?->confirmed_at && ! $latest->is_up ? 'down' : ($inMaintenance ? 'maintenance' : ($latest->is_up ? 'up' : 'pending')));
             $days = [];
             foreach ($entry->days as $date => $samples) {
                 $days[$date] = [
-                    'state' => $samples['up'] === $samples['count'] ? 'up' : ($samples['up'] ? 'degraded' : 'down'),
+                    'state' => $samples['measured'] === 0 ? 'maintenance' : ($samples['up'] === $samples['measured'] ? 'up' : ($samples['up'] ? 'degraded' : 'down')),
                     'count' => $samples['count'],
+                    'maintenance' => $samples['maintenance'] > 0,
                 ];
             }
 
@@ -70,12 +95,14 @@ class StatusController extends Controller
 
             $items[] = array_merge($service, [
                 'state' => $state,
+                'is_up' => ! $stale && $latest->is_up,
                 'status_code' => $latest?->status_code,
                 'response_ms' => $latest?->response_ms,
                 'error' => $latest?->error,
                 'checked_at' => $latest?->checked_at?->toIso8601String(),
                 'uptime' => $entry->count ? round($entry->up / $entry->count * 100, 2) : null,
-                'has_gaps' => $stale || $entry->count < $expected,
+                'has_gaps' => $stale || $entry->total < $expected,
+                'maintenance' => $inMaintenance,
                 'days' => $days,
             ]);
         }
@@ -105,6 +132,7 @@ class StatusController extends Controller
         return [
             'services' => $items,
             'incidents' => $incidents,
+            'maintenance' => $maintenance,
             'lastCheckedAt' => $lastCheckedAt,
             'historyDays' => 30,
         ];

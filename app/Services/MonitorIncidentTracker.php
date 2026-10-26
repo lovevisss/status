@@ -11,7 +11,10 @@ use Illuminate\Support\Str;
 
 class MonitorIncidentTracker
 {
-    public function __construct(private readonly MonitorRecipients $recipients) {}
+    public function __construct(
+        private readonly MonitorRecipients $recipients,
+        private readonly MonitorMaintenance $maintenance,
+    ) {}
 
     /** @param array{key: string, name: string, url: string} $service */
     public function record(array $service, MonitorCheck $check): void
@@ -23,7 +26,26 @@ class MonitorIncidentTracker
                 ->lockForUpdate()
                 ->first();
 
+            if ($check->is_maintenance) {
+                if (! $incident) {
+                    return;
+                }
+                if (! $incident->confirmed_at) {
+                    $incident->delete();
+
+                    return;
+                }
+                if (! $check->is_up) {
+                    return;
+                }
+            }
+
             if (! $check->is_up) {
+                if ($incident && ! $incident->confirmed_at
+                    && $this->maintenance->endedSince($service['key'], $incident->started_at, $check->checked_at)) {
+                    $incident->delete();
+                    $incident = null;
+                }
                 if ($incident && ! $incident->confirmed_at
                     && $incident->started_at->diffInSeconds($check->checked_at) > 300) {
                     $incident->delete();

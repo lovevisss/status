@@ -15,6 +15,7 @@ class MonitorRunner
     public function __construct(
         private readonly MonitorIncidentTracker $incidentTracker,
         private readonly MonitorTargetGuard $targetGuard,
+        private readonly MonitorMaintenance $maintenance,
     ) {}
 
     public function run(bool $evaluateAlerts = true): void
@@ -78,13 +79,15 @@ class MonitorRunner
                     return;
                 }
 
+                $checkedAt = now();
                 $check = MonitorCheck::create([
                     'service_key' => $service['key'],
                     'is_up' => $isUp,
                     'status_code' => $status,
                     'response_ms' => (int) round((microtime(true) - $start) * 1000),
                     'error' => $error,
-                    'checked_at' => now(),
+                    'checked_at' => $checkedAt,
+                    'is_maintenance' => $this->maintenance->activeFor($current, $checkedAt),
                 ]);
 
                 if ($evaluateAlerts) {

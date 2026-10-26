@@ -115,6 +115,7 @@ const dateLabel = (value: string) =>
                         >监测服务</a
                     >
                     <a href="/admin/recipients">邮件收件人</a>
+                    <a href="/admin/maintenance">计划维护</a>
                     <a class="back-link" href="/"
                         ><ArrowLeft :size="15" /> 返回公开状态页</a
                     >
@@ -810,7 +811,10 @@ footer {
         padding: 0 17px;
     }
     .site-header {
-        height: 76px;
+        min-height: 76px;
+        height: auto;
+        flex-wrap: wrap;
+        padding: 13px 0;
     }
     .brand {
         font-size: 14px;
@@ -820,6 +824,8 @@ footer {
     }
     .admin-links {
         gap: 10px;
+        width: 100%;
+        justify-content: space-between;
     }
     .admin-links > a {
         font-size: 10px;

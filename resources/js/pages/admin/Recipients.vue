@@ -134,6 +134,7 @@ const dateLabel = (value: string) =>
                         aria-current="page"
                         >邮件收件人</a
                     >
+                    <a href="/admin/maintenance">计划维护</a>
                     <a href="/"><ArrowLeft :size="15" /> 公开状态页</a>
                 </nav>
             </header>
@@ -821,6 +822,8 @@ footer {
     }
     .site-header {
         min-height: 76px;
+        flex-wrap: wrap;
+        padding: 13px 0;
     }
     .brand {
         font-size: 14px;
@@ -830,6 +833,8 @@ footer {
     }
     .site-header nav {
         gap: 10px;
+        width: 100%;
+        justify-content: space-between;
     }
     .site-header nav a {
         font-size: 10px;

@@ -40,8 +40,9 @@ class MonitorServiceManager
             if ($current->is_enabled) {
                 $this->ensureUrlAvailable($url, $current->id);
             }
+            $wasEnabled = $current->is_enabled;
             $this->archive($current, 'url_changed');
-            $this->newVersion($current, $name, $description, $url, $current->is_enabled);
+            $this->newVersion($current, $name, $description, $url, $wasEnabled);
         });
     }
 

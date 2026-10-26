@@ -16,13 +16,19 @@ import {
 } from '@lucide/vue';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 
-type DayRecord = { state: 'up' | 'degraded' | 'down'; count: number };
+type DayRecord = {
+    state: 'up' | 'degraded' | 'down' | 'maintenance';
+    count: number;
+    maintenance: boolean;
+};
 type Service = {
     key: string;
     name: string;
     description: string;
     url: string;
-    state: 'up' | 'down' | 'pending' | 'unknown';
+    state: 'up' | 'down' | 'pending' | 'unknown' | 'maintenance';
+    is_up: boolean;
+    maintenance: boolean;
     status_code: number | null;
     response_ms: number | null;
     error: string | null;
@@ -37,9 +43,20 @@ type Incident = {
     confirmed_at: string;
     recovered_at: string | null;
 };
+type Maintenance = {
+    id: number;
+    title: string;
+    description: string;
+    starts_at: string;
+    ends_at: string;
+    status: 'planned' | 'active' | 'completed';
+    service_ids: number[];
+    service_names: string[];
+};
 type StatusData = {
     services: Service[];
     incidents: Incident[];
+    maintenance: Maintenance[];
     lastCheckedAt: string | null;
     historyDays: number;
     canManage?: boolean;
@@ -48,6 +65,7 @@ const props = defineProps<StatusData>();
 const data = ref<StatusData>({
     services: props.services,
     incidents: props.incidents,
+    maintenance: props.maintenance,
     lastCheckedAt: props.lastCheckedAt,
     historyDays: props.historyDays,
 });
@@ -77,7 +95,7 @@ const visibleDays = computed(() =>
     }),
 );
 const upCount = computed(
-    () => data.value.services.filter((s) => s.state === 'up').length,
+    () => data.value.services.filter((s) => s.is_up).length,
 );
 const downCount = computed(
     () => data.value.services.filter((s) => s.state === 'down').length,
@@ -88,6 +106,15 @@ const pendingCount = computed(
 const unknownCount = computed(
     () => data.value.services.filter((s) => s.state === 'unknown').length,
 );
+const maintenanceCount = computed(
+    () => data.value.services.filter((s) => s.maintenance).length,
+);
+const visibleMaintenance = computed(() =>
+    data.value.maintenance.filter((item) => item.status !== 'completed'),
+);
+const maintenanceHistory = computed(() =>
+    data.value.maintenance.filter((item) => item.status === 'completed'),
+);
 const overall = computed(() =>
     downCount.value
         ? 'down'
@@ -95,7 +122,9 @@ const overall = computed(() =>
           ? 'unknown'
           : pendingCount.value
             ? 'pending'
-            : 'up',
+            : maintenanceCount.value
+              ? 'maintenance'
+              : 'up',
 );
 const averageUptime = computed(() => {
     const a = data.value.services
@@ -158,13 +187,18 @@ const dayDetails = computed(() =>
               .filter((x) => x.record)
         : [],
 );
-function dayState(date: string): 'up' | 'degraded' | 'down' | 'unknown' {
+function dayState(
+    date: string,
+): 'up' | 'degraded' | 'down' | 'maintenance' | 'unknown' {
     const r = data.value.services.map((s) => s.days[date]).filter(Boolean);
     if (!r.length) return 'unknown';
     if (r.some((x) => x.state === 'down')) return 'down';
     if (r.some((x) => x.state === 'degraded')) return 'degraded';
+    if (r.some((x) => x.state === 'maintenance')) return 'maintenance';
     return 'up';
 }
+const dayHasMaintenance = (date: string) =>
+    data.value.services.some((service) => service.days[date]?.maintenance);
 async function loadStatus() {
     try {
         const r = await fetch('/api/status', {
@@ -256,7 +290,9 @@ onUnmounted(() => {
                                       ? '部分服务访问异常'
                                       : overall === 'pending'
                                         ? '部分服务待复核'
-                                        : '监测中断／状态未知'
+                                        : overall === 'maintenance'
+                                          ? '部分服务计划维护中'
+                                          : '监测中断／状态未知'
                             }}
                         </h2>
                         <p>
@@ -267,7 +303,9 @@ onUnmounted(() => {
                                       ? `${downCount} 项服务已确认访问异常，请查看下方详情。`
                                       : overall === 'pending'
                                         ? `${pendingCount} 项服务首次探测失败，正在等待下一次检测。`
-                                        : `${unknownCount} 项服务超过 5 分钟没有新的探测记录。`
+                                        : overall === 'maintenance'
+                                          ? `${maintenanceCount} 项服务处于计划维护时段，探测仍在继续。`
+                                          : `${unknownCount} 项服务超过 5 分钟没有新的探测记录。`
                             }}
                         </p>
                     </div>
@@ -277,6 +315,41 @@ onUnmounted(() => {
                             }}<small>服务正常</small></span
                         >
                     </div>
+                </section>
+                <section
+                    v-if="visibleMaintenance.length"
+                    class="maintenance-section"
+                    aria-label="维护预告"
+                >
+                    <div class="maintenance-heading">
+                        <CalendarDays :size="20" />
+                        <div>
+                            <span>MAINTENANCE NOTICE</span>
+                            <h2>计划维护预告</h2>
+                        </div>
+                    </div>
+                    <article
+                        v-for="window in visibleMaintenance"
+                        :key="window.id"
+                        class="maintenance-notice"
+                    >
+                        <span class="maintenance-status">{{
+                            window.status === 'active' ? '维护中' : '即将维护'
+                        }}</span>
+                        <div>
+                            <h3>{{ window.title }}</h3>
+                            <p>{{ window.description }}</p>
+                            <p class="maintenance-meta">
+                                受影响服务：{{
+                                    window.service_names.join('、')
+                                }}
+                            </p>
+                        </div>
+                        <time
+                            >{{ displayDate(window.starts_at) }} —
+                            {{ displayDate(window.ends_at) }} · 北京时间</time
+                        >
+                    </article>
                 </section>
                 <div class="metric-row">
                     <div class="metric">
@@ -371,10 +444,22 @@ onUnmounted(() => {
                                                             'down'
                                                           ? '访问异常'
                                                           : service.state ===
-                                                              'pending'
-                                                            ? '可能异常／待复核'
-                                                            : '监测中断／状态未知'
+                                                              'maintenance'
+                                                            ? '计划维护中'
+                                                            : service.state ===
+                                                                'pending'
+                                                              ? '可能异常／待复核'
+                                                              : '监测中断／状态未知'
                                                 }}</span
+                                            >
+                                            <span
+                                                v-if="
+                                                    service.maintenance &&
+                                                    service.state !==
+                                                        'maintenance'
+                                                "
+                                                class="maintenance-inline"
+                                                >维护时段</span
                                             >
                                         </div>
                                         <p>{{ service.description }}</p>
@@ -404,10 +489,13 @@ onUnmounted(() => {
                                     v-for="date in visibleDays"
                                     :key="date"
                                     class="bar-day"
-                                    :class="
-                                        service.days[date]?.state ?? 'unknown'
-                                    "
-                                    :title="`${date} · ${service.days[date] ? { up: '正常', degraded: '部分异常', down: '异常' }[service.days[date].state] + ` · ${service.days[date].count}次检测` : '暂无数据'}`"
+                                    :class="[
+                                        service.days[date]?.state ?? 'unknown',
+                                        service.days[date]?.maintenance
+                                            ? 'has-maintenance'
+                                            : '',
+                                    ]"
+                                    :title="`${date} · ${service.days[date] ? { up: '正常', degraded: '部分异常', down: '异常', maintenance: '计划维护' }[service.days[date].state] + ` · ${service.days[date].count}次检测${service.days[date].maintenance ? ' · 含维护时段' : ''}` : '暂无数据'}`"
                                 ></span>
                             </div>
                             <div class="bar-labels">
@@ -456,6 +544,7 @@ onUnmounted(() => {
                         ><span><i class="legend-degraded"></i> 部分异常</span
                         ><span><i class="legend-down"></i> 异常</span
                         ><span><i class="legend-unknown"></i> 暂无数据</span>
+                        <span><i class="legend-maintenance"></i> 计划维护</span>
                     </div>
                 </section>
                 <div class="lower-grid">
@@ -517,6 +606,9 @@ onUnmounted(() => {
                                     :class="[
                                         day.current ? '' : 'outside',
                                         dayState(day.key),
+                                        dayHasMaintenance(day.key)
+                                            ? 'has-maintenance'
+                                            : '',
                                         selectedDay === day.key
                                             ? 'selected'
                                             : '',
@@ -535,7 +627,7 @@ onUnmounted(() => {
                                         dayDetails
                                             .map(
                                                 (x) =>
-                                                    `${x.service.name}：${x.record.state === 'up' ? '正常' : '出现异常'}`,
+                                                    `${x.service.name}：${x.record.state === 'maintenance' ? '计划维护' : x.record.state === 'up' ? '正常' : '出现异常'}${x.record.maintenance && x.record.state !== 'maintenance' ? '（含维护）' : ''}`,
                                             )
                                             .join(' · ')
                                     }}</span
@@ -595,6 +687,20 @@ onUnmounted(() => {
                         </div>
                     </section>
                 </div>
+                <section
+                    v-if="maintenanceHistory.length"
+                    class="maintenance-history"
+                >
+                    <h2>近期维护记录</h2>
+                    <div v-for="window in maintenanceHistory" :key="window.id">
+                        <strong>{{ window.title }}</strong
+                        ><span
+                            >{{ window.service_names.join('、') }} ·
+                            {{ displayDate(window.starts_at) }} —
+                            {{ displayDate(window.ends_at) }}</span
+                        >
+                    </div>
+                </section>
             </main>
             <footer class="site-footer">
                 <div class="footer-brand">
@@ -1588,6 +1694,164 @@ onUnmounted(() => {
 .state-tag.unknown {
     background: #eef1ee;
     color: #627168;
+}
+.overview-maintenance {
+    background: #f4f2e8;
+    border-color: #e6dfc7;
+}
+.overview-maintenance .overview-icon {
+    background: #9c8550;
+}
+.maintenance-section {
+    margin: 24px 0 0;
+    padding: 25px 28px;
+    background: #fffdf8;
+    border: 1px solid #e9e3d3;
+    border-radius: 16px;
+}
+.maintenance-heading {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #8f7947;
+    margin-bottom: 17px;
+}
+.maintenance-heading span {
+    font:
+        10px 'DM Mono',
+        monospace;
+    letter-spacing: 0.14em;
+}
+.maintenance-heading h2 {
+    margin: 4px 0 0;
+    font-size: 19px;
+    color: #3a483b;
+}
+.maintenance-notice {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 17px;
+    padding: 16px 0;
+    border-top: 1px solid #eee9db;
+}
+.maintenance-notice h3 {
+    margin: 0 0 6px;
+    font-size: 15px;
+}
+.maintenance-notice p {
+    margin: 0;
+    color: #728477;
+    font-size: 12px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+}
+.maintenance-notice .maintenance-meta {
+    margin-top: 7px;
+    color: #8a7649;
+}
+.maintenance-notice time {
+    font:
+        11px/1.6 'DM Mono',
+        'Noto Sans SC',
+        sans-serif;
+    color: #786b4c;
+    text-align: right;
+    white-space: nowrap;
+}
+.maintenance-status {
+    font-size: 10px;
+    font-weight: 700;
+    color: #8d743c;
+    background: #f5eccc;
+    border-radius: 5px;
+    padding: 5px 8px;
+    white-space: nowrap;
+}
+.status-indicator.maintenance {
+    background: #c5a35e;
+    box-shadow: 0 0 0 4px #f8f1df;
+}
+.state-tag.maintenance,
+.maintenance-inline {
+    background: #f5ecd1;
+    color: #8b6d2f;
+}
+.maintenance-inline {
+    font-size: 10px;
+    border-radius: 4px;
+    padding: 4px 7px;
+    white-space: nowrap;
+}
+.bar-day.maintenance {
+    background: repeating-linear-gradient(
+        135deg,
+        #cfb675 0 5px,
+        #e7dcb5 5px 9px
+    );
+}
+.bar-day.has-maintenance:not(.maintenance) {
+    position: relative;
+}
+.bar-day.has-maintenance:not(.maintenance)::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 3px;
+    background: #cba963;
+}
+.legend-maintenance {
+    background: repeating-linear-gradient(
+        135deg,
+        #cfb675 0 5px,
+        #e7dcb5 5px 9px
+    ) !important;
+}
+.calendar-grid.dates button.has-maintenance {
+    box-shadow: inset 0 -3px #cba963;
+}
+.maintenance-history {
+    margin-top: 30px;
+    padding: 24px 28px;
+    background: white;
+    border: 1px solid #e5eae5;
+    border-radius: 16px;
+}
+.maintenance-history h2 {
+    font-size: 18px;
+    margin: 0 0 14px;
+}
+.maintenance-history > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    border-top: 1px solid #edf0e8;
+    padding: 12px 0;
+    color: #7e8d82;
+    font-size: 11px;
+}
+.maintenance-history strong {
+    color: #3e5849;
+    font-size: 12px;
+}
+@media (max-width: 700px) {
+    .maintenance-notice {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+    .maintenance-notice time {
+        text-align: left;
+        white-space: normal;
+    }
+    .maintenance-section {
+        padding: 19px;
+    }
+    .maintenance-history > div {
+        flex-direction: column;
+        gap: 3px;
+    }
 }
 .admin-link {
     color: #276d4c;

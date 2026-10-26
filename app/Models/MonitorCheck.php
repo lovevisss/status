@@ -10,10 +10,10 @@ class MonitorCheck extends Model
 {
     public $timestamps = false;
 
-    protected $fillable = ['service_key', 'is_up', 'status_code', 'response_ms', 'error', 'checked_at'];
+    protected $fillable = ['service_key', 'is_up', 'status_code', 'response_ms', 'error', 'checked_at', 'is_maintenance'];
 
     protected function casts(): array
     {
-        return ['is_up' => 'boolean', 'checked_at' => 'datetime'];
+        return ['is_up' => 'boolean', 'checked_at' => 'datetime', 'is_maintenance' => 'boolean'];
     }
 }

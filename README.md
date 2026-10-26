@@ -22,6 +22,8 @@ php artisan serve
 1. 在服务器上准备 PHP 8.3+、所需 PHP 扩展、Composer、Node.js、MySQL／MariaDB，以及可访问三项监测服务和消息平台的网络。Web 服务器站点根目录指向项目的 `public/`，域名使用 `https://status.zufedfc.edu.cn`。只有 `storage/` 和 `bootstrap/cache/` 需要 Web／CLI 用户的写权限。
 2. 从 Git 仓库拉取项目。首次部署时复制 `.env.example` 为 `.env` 并生成 `APP_KEY`；以后更新必须保留现有 `.env`、数据库和 `APP_KEY`。
 3. 在服务器 `.env` 设置 `APP_ENV=production`、`APP_DEBUG=false`、`APP_URL=https://status.zufedfc.edu.cn`、MySQL 连接信息、`MONITOR_ADMIN_EMAILS` 及下面的邮件配置。密钥只存服务器环境，不提交 Git。本次已在聊天中共享的旧密钥须在消息平台轮换；服务器使用轮换后的新密钥。
+
+   登录依赖同一浏览器会话中的 CSRF 令牌。生产环境还应设置 `SESSION_SECURE_COOKIE=true`、`SESSION_DOMAIN=null`（除非确有跨子域共享需求），并在 Web 服务器将 HTTP 永久跳转到 HTTPS。`APP_URL` 只用于生成地址，不会替代 Web 服务器的跳转。如果 HTTPS 由反向代理终止，设置 `TRUSTED_PROXIES` 为该代理的实际 IP 或 CIDR（多个值用英文逗号分隔），并确认代理传递 `X-Forwarded-Proto: https`；不要信任任意来源的转发头。修改后执行 `php artisan optimize:clear && php artisan config:cache`。
 4. 在项目目录运行：
 
 ```bash
@@ -82,3 +84,9 @@ npm run build
 ```
 
 生产验收检查三项服务和消息平台的网络连通性、cron 重启后恢复、24 小时采样连续性，以及带“测试”标记邮件的最终投递状态。
+
+### 登录后出现 419 Page Expired
+
+419 表示登录提交时无法验证同一会话的 CSRF 令牌。先确认浏览器地址为 `https://status.zufedfc.edu.cn/login`，且浏览器没有显示“不安全”。服务器上运行 `curl -I http://status.zufedfc.edu.cn/login`，应看到跳转到 HTTPS；运行 `curl -I https://status.zufedfc.edu.cn/login`，应能正常验证证书并返回页面。若使用反向代理，检查上述 `TRUSTED_PROXIES` 和 `X-Forwarded-Proto`。不要关闭 CSRF 中间件。
+
+再检查服务器 `.env` 的 `APP_URL`、`SESSION_DRIVER`、`SESSION_DOMAIN`、`SESSION_SECURE_COOKIE`，以及 `php artisan config:show session` 中的实际生效值。使用数据库会话时，确认 `sessions` 表存在且 Web 用户可读写；多个应用实例必须使用同一数据库和稳定的 `APP_KEY`。修正后执行 `php artisan optimize:clear && php artisan config:cache`，清除浏览器中该站点的旧 Cookie，再从 HTTPS 登录页重试。不要把 `.env`、`APP_KEY` 或会话 Cookie 发给他人。

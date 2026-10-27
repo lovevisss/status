@@ -38,14 +38,25 @@ defineProps<{
         {{ status }}
     </div>
 
-    <div v-if="canUseCas" class="mb-6">
+    <div class="mb-6">
         <a
+            v-if="canUseCas"
             href="/auth/cas/login"
             class="flex w-full items-center justify-center rounded-md bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
         >
             使用学校统一身份认证登录
         </a>
-        <p class="mt-3 text-center text-xs text-muted-foreground">
+        <div
+            v-else
+            role="status"
+            class="rounded-md border border-border bg-muted px-4 py-3 text-center text-sm text-muted-foreground"
+        >
+            学校统一身份认证暂不可用，请联系管理员启用 HTTPS 和 CAS。
+        </div>
+        <p
+            v-if="canUseCas"
+            class="mt-3 text-center text-xs text-muted-foreground"
+        >
             仅限已绑定学工号的管理员账号
         </p>
         <div class="my-5 flex items-center gap-3 text-xs text-muted-foreground">

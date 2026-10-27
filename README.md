@@ -87,6 +87,8 @@ npm run build
 
 ### 登录后出现 419 Page Expired
 
-419 表示登录提交时无法验证同一会话的 CSRF 令牌。先确认浏览器地址为 `https://status.zufedfc.edu.cn/login`，且浏览器没有显示“不安全”。服务器上运行 `curl -I http://status.zufedfc.edu.cn/login`，应看到跳转到 HTTPS；运行 `curl -I https://status.zufedfc.edu.cn/login`，应能正常验证证书并返回页面。若使用反向代理，检查上述 `TRUSTED_PROXIES` 和 `X-Forwarded-Proto`。不要关闭 CSRF 中间件。
+419 表示登录提交时无法验证同一会话的 CSRF 令牌。应用在纯 HTTP 下也应能保持会话；如果 HTTPS 尚未启用，不能仅凭浏览器显示“不安全”就判定这是 419 的原因。先在浏览器开发者工具中确认 GET `/login` 返回的会话 Cookie 被保存，并在 POST `/login` 时原样送回。如果 HTTP 上意外下发 `Secure` Cookie，检查 Nginx／PHP 的 `HTTPS` 参数和受信任代理的 `X-Forwarded-Proto`：HTTP 请求不能被错误标为 HTTPS。也检查请求和提交是否使用同一域名。
+
+准备启用 HTTPS 时，先让 `curl -I https://status.zufedfc.edu.cn/login` 能正常验证证书，再让 `curl -I http://status.zufedfc.edu.cn/login` 跳转到 HTTPS，最后设置 `SESSION_SECURE_COOKIE=true`。若使用反向代理，检查上述 `TRUSTED_PROXIES` 和 `X-Forwarded-Proto`。不要关闭 CSRF 中间件。
 
 再检查服务器 `.env` 的 `APP_URL`、`SESSION_DRIVER`、`SESSION_DOMAIN`、`SESSION_SECURE_COOKIE`，以及 `php artisan config:show session` 中的实际生效值。使用数据库会话时，确认 `sessions` 表存在且 Web 用户可读写；多个应用实例必须使用同一数据库和稳定的 `APP_KEY`。修正后执行 `php artisan optimize:clear && php artisan config:cache`，清除浏览器中该站点的旧 Cookie，再从 HTTPS 登录页重试。不要把 `.env`、`APP_KEY` 或会话 Cookie 发给他人。

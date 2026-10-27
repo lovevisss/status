@@ -23,7 +23,8 @@ php artisan serve
 2. 从 Git 仓库拉取项目。首次部署时复制 `.env.example` 为 `.env` 并生成 `APP_KEY`；以后更新必须保留现有 `.env`、数据库和 `APP_KEY`。
 3. 在服务器 `.env` 设置 `APP_ENV=production`、`APP_DEBUG=false`、`APP_URL=https://status.zufedfc.edu.cn`、MySQL 连接信息、`MONITOR_ADMIN_EMAILS` 及下面的邮件配置。密钥只存服务器环境，不提交 Git。本次已在聊天中共享的旧密钥须在消息平台轮换；服务器使用轮换后的新密钥。
 
-   登录依赖同一浏览器会话中的 CSRF 令牌。生产环境还应设置 `SESSION_SECURE_COOKIE=true`、`SESSION_DOMAIN=null`（除非确有跨子域共享需求），并在 Web 服务器将 HTTP 永久跳转到 HTTPS。`APP_URL` 只用于生成地址，不会替代 Web 服务器的跳转。如果 HTTPS 由反向代理终止，设置 `TRUSTED_PROXIES` 为该代理的实际 IP 或 CIDR（多个值用英文逗号分隔），并确认代理传递 `X-Forwarded-Proto: https`；不要信任任意来源的转发头。修改后执行 `php artisan optimize:clear && php artisan config:cache`。
+    登录依赖同一浏览器会话中的 CSRF 令牌。生产环境还应设置 `SESSION_SECURE_COOKIE=true`、`SESSION_DOMAIN=null`（除非确有跨子域共享需求），并在 Web 服务器将 HTTP 永久跳转到 HTTPS。`APP_URL` 只用于生成地址，不会替代 Web 服务器的跳转。如果 HTTPS 由反向代理终止，设置 `TRUSTED_PROXIES` 为该代理的实际 IP 或 CIDR（多个值用英文逗号分隔），并确认代理传递 `X-Forwarded-Proto: https`；不要信任任意来源的转发头。修改后执行 `php artisan optimize:clear && php artisan config:cache`。
+
 4. 在项目目录运行：
 
 ```bash
@@ -40,6 +41,22 @@ php artisan schedule:list
 首次迁移会把原来的三项服务导入 `monitor_services` 表。本次收件人迁移会一次性读取当时的 `MONITOR_ALERT_RECIPIENTS`，导入 `monitor_recipients` 表；迁移完成后，数据库成为唯一的通知名单来源。请在运行迁移前保留服务器原有名单，迁移后到 `/admin/recipients` 核对人数和学工号，确认无误后可从 `.env` 删除旧名单变量。已有管理员账号的邮箱加入 `MONITOR_ADMIN_EMAILS` 后，执行 `php artisan monitor:admin:activate 管理员邮箱` 验证该账号，再用原密码登录 `/admin/monitors`。该命令只激活数据库中已经存在且在白名单内的账号；公开注册现已关闭。部署时请确认生产数据库中确有该账号。白名单多个邮箱用英文逗号分隔，例如 `MONITOR_ADMIN_EMAILS=one@example.edu.cn,two@example.edu.cn`。
 
 管理页可新增、编辑、停用及重新启用监测项。新项目等待下一次两分钟任务首次检测。更换网址或重新启用时建立新监测周期，旧探测记录保留至 30 天清理期满；停用或更换网址会结束旧故障周期，并取消尚未提交的告警。已提交的消息平台任务继续追踪投递状态。
+
+### 学校统一身份认证（CAS）
+
+本站支持已绑定的管理员通过学校 CAS 登录，原有账号密码登录继续保留。CAS 不自动创建用户，也不授予后台权限：部署人员先创建或确认本地账号、验证邮箱并将其加入 `MONITOR_ADMIN_EMAILS`，再运行 `php artisan monitor:admin:bind-cas 管理员邮箱 学工号`。学工号按 CAS 的 `cas:user` 原样精确匹配，不能重复绑定；若管理员离职或撤销权限，应从白名单移除并运行 `php artisan monitor:admin:unbind-cas 管理员邮箱`。收件人名单中的学工号不等同于管理员账号。
+
+CAS 包来自私有仓库 `lovevisss/laravel-zufedfc-cas`。部署机器的 Composer 必须预先具备该仓库读取权限；凭据只配置在部署环境，不能写入项目或聊天。`composer install --no-dev` 应从锁文件安装同一版本。服务器仍使用数据库会话和共享缓存，以便 CAS 单点退出销毁对应会话。
+
+先让 `https://status.zufedfc.edu.cn/login` 正常打开、证书有效，再请学校 CAS 管理员登记以下**完整地址**：
+
+| 用途                           | 地址                                              |
+| ------------------------------ | ------------------------------------------------- |
+| 应用首页、退出后返回           | `https://status.zufedfc.edu.cn/`                  |
+| 登录回调、CAS service 匹配地址 | `https://status.zufedfc.edu.cn/auth/cas/callback` |
+| 单点退出（SLO）                | `https://status.zufedfc.edu.cn/auth/cas/slo`      |
+
+登记完成后，在服务器 `.env` 设置 `APP_URL=https://status.zufedfc.edu.cn`、`CAS_ENABLED=true`、`CAS_SERVICE_URL=https://status.zufedfc.edu.cn/auth/cas/callback`、`CAS_POST_LOGOUT_URL=https://status.zufedfc.edu.cn/`、`CAS_VERIFY_TLS=true`，然后运行 `php artisan optimize:clear && php artisan config:cache`。如果学校明确要求 P3 校验，再设置 `CAS_VALIDATE_PATH=/p3/serviceValidate`；默认是 `/serviceValidate`。CAS 登录入口为 `/auth/cas/login`，仅在开关开启且 HTTPS 回调与 `APP_URL` 完全一致时显示。测试时确认未绑定账号无法进入后台，已绑定账号登录后可管理监测项，退出会跳转学校 CAS，学校发出的标准 SLO 和 JSONP SLO 都能使本站会话失效。CAS 回调 URL 含一次性 Ticket，Nginx 不应记录 `/auth/cas/callback` 和 `/auth/cas/slo` 的查询字符串或请求体；不要记录或分享真实 Ticket。
 
 管理员可在 `/admin/maintenance` 为一个或多个当前启用的服务安排计划维护，填写标题、说明和北京时间起止时间。开始前 7 天，公开页面会展示预告；维护期间仍持续探测，但该时段采样不计入 30 天可用率，新故障不发送邮件。维护结束后重新累计两次失败。维护前已确认的故障及对应故障、恢复邮件继续处理。计划可在开始前编辑或取消，开始后可调整结束时间或提前结束；同一服务的维护时段不能重叠。服务更换 URL 或重新启用会建立新监测周期，旧维护计划不会自动套用，后台会提示重新选择。已结束的维护在公开页面保留 30 天。
 

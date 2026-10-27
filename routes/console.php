@@ -75,3 +75,54 @@ Artisan::command('monitor:admin:activate {email}', function (string $email) {
 
     return 0;
 })->purpose('Verify an existing allowlisted monitor administrator account');
+
+Artisan::command('monitor:admin:bind-cas {email} {account}', function (string $email, string $account) {
+    $emails = array_filter(array_map(
+        fn (string $value) => strtolower(trim($value)),
+        explode(',', (string) config('monitors.admin_emails', '')),
+    ));
+
+    if (! in_array(strtolower($email), $emails, true)) {
+        $this->error('该邮箱未列入 MONITOR_ADMIN_EMAILS。');
+
+        return 1;
+    }
+
+    $user = User::where('email', $email)->first();
+    if (! $user || ! $user->hasVerifiedEmail()) {
+        $this->error('找不到已验证的管理员账号。');
+
+        return 1;
+    }
+
+    if ($account === '' || strlen($account) > 120 || trim($account) !== $account) {
+        $this->error('CAS 学工号不能为空、超出 120 字符或包含首尾空格。');
+
+        return 1;
+    }
+
+    if (User::where('cas_account', $account)->whereKeyNot($user->getKey())->exists()) {
+        $this->error('该 CAS 学工号已绑定其他账号。');
+
+        return 1;
+    }
+
+    $user->forceFill(['cas_account' => $account])->save();
+    $this->info('管理员账号已绑定 CAS 学工号。');
+
+    return 0;
+})->purpose('Bind an existing verified monitor administrator to an exact CAS account');
+
+Artisan::command('monitor:admin:unbind-cas {email}', function (string $email) {
+    $user = User::where('email', $email)->first();
+    if (! $user) {
+        $this->error('找不到该账号。');
+
+        return 1;
+    }
+
+    $user->forceFill(['cas_account' => null])->save();
+    $this->info('管理员账号的 CAS 学工号绑定已解除。');
+
+    return 0;
+})->purpose('Remove a CAS account binding from an existing user');

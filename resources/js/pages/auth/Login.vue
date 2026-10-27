@@ -24,6 +24,7 @@ defineOptions({
 defineProps<{
     status?: string;
     canResetPassword: boolean;
+    canUseCas: boolean;
 }>();
 </script>
 
@@ -35,6 +36,23 @@ defineProps<{
         class="mb-4 text-center text-sm font-medium text-green-600"
     >
         {{ status }}
+    </div>
+
+    <div v-if="canUseCas" class="mb-6">
+        <a
+            href="/auth/cas/login"
+            class="flex w-full items-center justify-center rounded-md bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
+        >
+            使用学校统一身份认证登录
+        </a>
+        <p class="mt-3 text-center text-xs text-muted-foreground">
+            仅限已绑定学工号的管理员账号
+        </p>
+        <div class="my-5 flex items-center gap-3 text-xs text-muted-foreground">
+            <span class="h-px flex-1 bg-border" />
+            <span>或使用本站账号</span>
+            <span class="h-px flex-1 bg-border" />
+        </div>
     </div>
 
     <!-- @chisel-passkeys -->

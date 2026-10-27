@@ -3,14 +3,36 @@
 use App\Http\Controllers\Admin\MonitorMaintenanceController;
 use App\Http\Controllers\Admin\MonitorRecipientController;
 use App\Http\Controllers\Admin\MonitorServiceController;
+use App\Http\Controllers\CasCallbackController;
+use App\Http\Controllers\CasLogoutController;
 use App\Http\Controllers\IncidentController;
 use App\Http\Controllers\StatusController;
+use App\Http\Middleware\EnsureCasReady;
 use App\Http\Middleware\EnsureMonitorAdmin;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\Route;
+use Lovevisss\LaravelZufedfcCas\CasClient;
+use Lovevisss\LaravelZufedfcCas\Http\Controllers\SloController;
 
 Route::get('/', [StatusController::class, 'index'])->name('home');
 Route::get('/api/status', [StatusController::class, 'show']);
 Route::get('/incidents/{key}', [IncidentController::class, 'show'])->name('incidents.show');
+
+Route::prefix('auth/cas')->name('cas.')->group(function (): void {
+    Route::get('login', fn (CasClient $cas) => redirect()->away($cas->loginUrl('/admin/monitors')))
+        ->middleware(EnsureCasReady::class)
+        ->name('login');
+    Route::get('callback', CasCallbackController::class)
+        ->middleware(EnsureCasReady::class)
+        ->name('callback');
+    Route::post('logout', CasLogoutController::class)->name('logout');
+    Route::match(['GET', 'POST'], 'slo', SloController::class)
+        ->withoutMiddleware(PreventRequestForgery::class)
+        ->name('slo');
+});
+
+Route::get('/access-denied', fn () => response()->view('auth.cas-access-denied', status: 403))
+    ->name('cas.access-denied');
 
 Route::middleware(['auth', 'verified', EnsureMonitorAdmin::class])->prefix('admin')->name('admin.')->group(function () {
     Route::get('monitors', [MonitorServiceController::class, 'index'])->name('monitors.index');

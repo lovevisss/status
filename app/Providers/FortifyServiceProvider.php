@@ -2,11 +2,12 @@
 
 namespace App\Providers;
 
+use App\Actions\Fortify\CreateNewUser;
 /* @chisel-registration */
 
-use App\Actions\Fortify\CreateNewUser;
-/* @end-chisel-registration */
 use App\Actions\Fortify\ResetUserPassword;
+/* @end-chisel-registration */
+use App\Services\CasAvailability;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -55,6 +56,7 @@ class FortifyServiceProvider extends ServiceProvider
     {
         Fortify::loginView(fn (Request $request) => Inertia::render('auth/Login', [
             'canResetPassword' => Features::enabled(Features::resetPasswords()),
+            'canUseCas' => app(CasAvailability::class)->ready($request),
             'status' => $request->session()->get('status'),
         ]));
 

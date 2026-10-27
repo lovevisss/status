@@ -2,13 +2,30 @@
 
 namespace App\Services;
 
+use App\Models\MonitorAdmin;
 use App\Models\User;
 
 class MonitorAdminAccess
 {
-    public function allows(?User $user): bool
+    public function allows(?User $user, bool $viaCas = false): bool
     {
-        if (! $user || ! $user->hasVerifiedEmail()) {
+        if (! $user) {
+            return false;
+        }
+
+        $admin = $user->cas_account
+            ? MonitorAdmin::query()->where('cas_account', $user->cas_account)->first()
+            : null;
+
+        if ($admin && ! $admin->is_enabled) {
+            return false;
+        }
+
+        if ($admin && $viaCas) {
+            return true;
+        }
+
+        if (! $user->hasVerifiedEmail()) {
             return false;
         }
 

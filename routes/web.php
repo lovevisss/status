@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\MonitorAdminController;
 use App\Http\Controllers\Admin\MonitorMaintenanceController;
 use App\Http\Controllers\Admin\MonitorRecipientController;
 use App\Http\Controllers\Admin\MonitorServiceController;
@@ -9,6 +10,7 @@ use App\Http\Controllers\IncidentController;
 use App\Http\Controllers\StatusController;
 use App\Http\Middleware\EnsureCasReady;
 use App\Http\Middleware\EnsureMonitorAdmin;
+use App\Http\Middleware\EnsureMonitorVerifiedOrCas;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\Route;
 use Lovevisss\LaravelZufedfcCas\CasClient;
@@ -34,7 +36,11 @@ Route::prefix('auth/cas')->name('cas.')->group(function (): void {
 Route::get('/access-denied', fn () => response()->view('auth.cas-access-denied', status: 403))
     ->name('cas.access-denied');
 
-Route::middleware(['auth', 'verified', EnsureMonitorAdmin::class])->prefix('admin')->name('admin.')->group(function () {
+Route::middleware(['auth', EnsureMonitorVerifiedOrCas::class, EnsureMonitorAdmin::class])->prefix('admin')->name('admin.')->group(function () {
+    Route::get('administrators', [MonitorAdminController::class, 'index'])->name('administrators.index');
+    Route::post('administrators', [MonitorAdminController::class, 'store'])->name('administrators.store');
+    Route::post('administrators/{admin}/disable', [MonitorAdminController::class, 'disable'])->name('administrators.disable');
+    Route::post('administrators/{admin}/enable', [MonitorAdminController::class, 'enable'])->name('administrators.enable');
     Route::get('monitors', [MonitorServiceController::class, 'index'])->name('monitors.index');
     Route::post('monitors', [MonitorServiceController::class, 'store'])->name('monitors.store');
     Route::put('monitors/{monitor}', [MonitorServiceController::class, 'update'])->name('monitors.update');

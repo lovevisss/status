@@ -135,6 +135,7 @@ const dateLabel = (value: string) =>
                         >邮件收件人</a
                     >
                     <a href="/admin/maintenance">计划维护</a>
+                    <a href="/admin/administrators">管理员</a>
                     <a href="/"><ArrowLeft :size="15" /> 公开状态页</a>
                 </nav>
             </header>

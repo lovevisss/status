@@ -13,7 +13,7 @@ class EnsureMonitorAdmin
 
     public function handle(Request $request, Closure $next): Response
     {
-        abort_unless($this->access->allows($request->user()), 403);
+        abort_unless($this->access->allows($request->user(), $request->session()->get('auth.via_cas') === true), 403);
 
         return $next($request);
     }

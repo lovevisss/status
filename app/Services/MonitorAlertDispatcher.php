@@ -23,7 +23,7 @@ class MonitorAlertDispatcher
 
         foreach ($due as $alert) {
             if ($alert->created_at->lt(now()->subDay())) {
-                $this->fail($alert, '邮件重试超过 24 小时，需人工处理');
+                $this->fail($alert, '通知重试超过 24 小时，需人工处理');
             }
         }
         $due = $due->filter(fn (MonitorAlert $alert) => $alert->status !== 'failed');
@@ -31,21 +31,18 @@ class MonitorAlertDispatcher
             return;
         }
 
-        $config = $this->settings();
-        if ($config === null) {
-            if (Cache::add('monitor-alert-config-warning', true, 3600)) {
-                Log::error('Monitor email API is not configured. Set MONITOR_ALERT_API_URL and MONITOR_ALERT_API_TOKEN.');
-            }
-            foreach ($due as $alert) {
-                if ($alert->last_error !== 'MONITOR_ALERT_API_URL 或 MONITOR_ALERT_API_TOKEN 未配置') {
-                    $alert->update(['last_error' => 'MONITOR_ALERT_API_URL 或 MONITOR_ALERT_API_TOKEN 未配置']);
-                }
-            }
-
-            return;
-        }
-
         foreach ($due as $alert) {
+            $config = $this->settings($alert);
+            if ($config === null) {
+                $message = $alert->channel === 'sms' ? 'GATEWAY_SMS_API_TOKEN 或消息平台地址未配置' : 'MONITOR_ALERT_API_URL 或 MONITOR_ALERT_API_TOKEN 未配置';
+                if (Cache::add('monitor-alert-config-warning-'.$alert->channel, true, 3600)) {
+                    Log::error($message);
+                }
+                if ($alert->last_error !== $message) {
+                    $alert->update(['last_error' => $message]);
+                }
+                continue;
+            }
             if ($alert->kind === 'recovery' && ! $this->outageWasSubmitted($alert)) {
                 continue;
             }
@@ -59,10 +56,10 @@ class MonitorAlertDispatcher
     }
 
     /** @return array{api_url: string, api_token: string}|null */
-    private function settings(): ?array
+    private function settings(MonitorAlert $alert): ?array
     {
         $apiUrl = config('monitors.alerts.api_url');
-        $apiToken = config('monitors.alerts.api_token');
+        $apiToken = $alert->channel === 'sms' ? config('monitors.gateway_sms.api_token') : config('monitors.alerts.api_token');
         if (! is_string($apiUrl) || filter_var($apiUrl, FILTER_VALIDATE_URL) === false
             || parse_url($apiUrl, PHP_URL_SCHEME) !== 'https'
             || ! is_string($apiToken) || $apiToken === '') {
@@ -78,7 +75,7 @@ class MonitorAlertDispatcher
     private function outageWasSubmitted(MonitorAlert $recovery): bool
     {
         $outage = $recovery->incident->alerts()->where('kind', 'outage')
-            ->where('recipient_id', $recovery->recipient_id)->first();
+            ->where('recipient_id', $recovery->recipient_id)->where('channel', $recovery->channel)->first();
         if ($outage?->status === 'accepted') {
             return true;
         }
@@ -112,13 +109,16 @@ class MonitorAlertDispatcher
         if ($alert->recipient_email) {
             $recipient['email'] = $alert->recipient_email;
         }
+        if ($alert->recipient_mobile) {
+            $recipient['mobile'] = $alert->recipient_mobile;
+        }
 
         try {
             $response = Http::withToken($config['api_token'])->acceptJson()
                 ->connectTimeout(4)->timeout(10)
                 ->post($config['api_url'], [
                     'request_id' => $alert->request_id,
-                    'channels' => ['email'],
+                    'channels' => [$alert->channel],
                     'title' => $alert->title,
                     'content' => $alert->content,
                     'recipients' => [$recipient],

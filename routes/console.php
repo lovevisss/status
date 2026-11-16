@@ -4,6 +4,7 @@ use App\Models\MonitorRecipient;
 use App\Models\User;
 use App\Services\MonitorAlertDispatcher;
 use App\Services\MonitorRunner;
+use App\Services\GatewayRunner;
 use App\Services\MonitorTestMailQueue;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -19,6 +20,13 @@ Artisan::command('monitor:check', function (MonitorRunner $runner) {
 })->purpose('Check configured campus services');
 
 Schedule::command('monitor:check')->everyTwoMinutes()->withoutOverlapping();
+
+Artisan::command('gateway:check', function (GatewayRunner $runner) {
+    $runner->run();
+    $this->info('Gateway checks completed.');
+})->purpose('Ping dormitory electricity gateways');
+
+Schedule::command('gateway:check')->everyTwoMinutes()->withoutOverlapping();
 
 Artisan::command('monitor:dispatch-alerts', function (MonitorAlertDispatcher $dispatcher) {
     $dispatcher->run();

@@ -16,7 +16,7 @@ class MonitorIncident extends Model
 {
     protected $fillable = [
         'incident_key', 'service_key', 'consecutive_failures',
-        'started_at', 'confirmed_at', 'recovered_at', 'closed_at', 'closed_reason',
+        'started_at', 'confirmed_at', 'recovered_at', 'closed_at', 'closed_reason', 'target_name', 'target_address',
     ];
 
     protected function casts(): array

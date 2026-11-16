@@ -144,6 +144,8 @@ function action(window: Window, kind: 'cancel' | 'finish') {
                 </div>
                 <nav aria-label="管理导航">
                     <a href="/admin/monitors">监测服务</a
+                    ><a href="/admin/gateways">电表网关</a
+                    ><a href="/admin/gateway-recipients">网关处理人员</a
                     ><a href="/admin/recipients">邮件收件人</a
                     ><a href="/admin/administrators">管理员</a
                     ><a

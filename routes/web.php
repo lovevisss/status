@@ -4,6 +4,8 @@ use App\Http\Controllers\Admin\MonitorAdminController;
 use App\Http\Controllers\Admin\MonitorMaintenanceController;
 use App\Http\Controllers\Admin\MonitorRecipientController;
 use App\Http\Controllers\Admin\MonitorServiceController;
+use App\Http\Controllers\Admin\GatewayController;
+use App\Http\Controllers\Admin\GatewayRecipientController;
 use App\Http\Controllers\CasCallbackController;
 use App\Http\Controllers\CasLogoutController;
 use App\Http\Controllers\IncidentController;
@@ -37,6 +39,16 @@ Route::get('/access-denied', fn () => response()->view('auth.cas-access-denied',
     ->name('cas.access-denied');
 
 Route::middleware(['auth', EnsureMonitorVerifiedOrCas::class, EnsureMonitorAdmin::class])->prefix('admin')->name('admin.')->group(function () {
+    Route::get('gateways', [GatewayController::class, 'index'])->name('gateways.index');
+    Route::put('gateways/{gateway}', [GatewayController::class, 'update'])->name('gateways.update');
+    Route::post('gateways/{gateway}/disable', [GatewayController::class, 'disable'])->name('gateways.disable');
+    Route::post('gateways/{gateway}/enable', [GatewayController::class, 'enable'])->name('gateways.enable');
+    Route::get('gateway-recipients', [GatewayRecipientController::class, 'index'])->name('gateway-recipients.index');
+    Route::post('gateway-recipients', [GatewayRecipientController::class, 'store'])->name('gateway-recipients.store');
+    Route::put('gateway-recipients/{recipient}', [GatewayRecipientController::class, 'update'])->name('gateway-recipients.update');
+    Route::post('gateway-recipients/{recipient}/disable', [GatewayRecipientController::class, 'disable'])->name('gateway-recipients.disable');
+    Route::post('gateway-recipients/{recipient}/enable', [GatewayRecipientController::class, 'enable'])->name('gateway-recipients.enable');
+    Route::post('gateway-recipients/{recipient}/test', [GatewayRecipientController::class, 'test'])->name('gateway-recipients.test');
     Route::get('administrators', [MonitorAdminController::class, 'index'])->name('administrators.index');
     Route::post('administrators', [MonitorAdminController::class, 'store'])->name('administrators.store');
     Route::post('administrators/{admin}/disable', [MonitorAdminController::class, 'disable'])->name('administrators.disable');

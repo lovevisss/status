@@ -56,15 +56,32 @@ type Maintenance = {
 };
 type StatusData = {
     services: Service[];
+    gateways: Gateway[];
+    gatewayIncidents: Incident[];
+    gatewayLastCheckedAt: string | null;
     incidents: Incident[];
     maintenance: Maintenance[];
     lastCheckedAt: string | null;
     historyDays: number;
     canManage?: boolean;
 };
+type Gateway = {
+    key: string;
+    gateway_number: string;
+    ip: string;
+    location: string;
+    building: number;
+    state: 'up' | 'down' | 'pending' | 'unknown';
+    checked_at: string | null;
+    response_ms: number | null;
+    uptime: number | null;
+};
 const props = defineProps<StatusData>();
 const data = ref<StatusData>({
     services: props.services,
+    gateways: props.gateways,
+    gatewayIncidents: props.gatewayIncidents,
+    gatewayLastCheckedAt: props.gatewayLastCheckedAt,
     incidents: props.incidents,
     maintenance: props.maintenance,
     lastCheckedAt: props.lastCheckedAt,
@@ -73,6 +90,32 @@ const data = ref<StatusData>({
 const monthOffset = ref(0);
 const selectedDay = ref<string | null>(null);
 const serviceSearch = ref('');
+const gatewaySearch = ref('');
+const activeTab = ref<'services' | 'gateways'>(
+    typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('tab') === 'gateways'
+        ? 'gateways'
+        : 'services',
+);
+const filteredGateways = computed(() => {
+    const query = gatewaySearch.value.trim().toLocaleLowerCase();
+    return query
+        ? data.value.gateways.filter((item) =>
+              [
+                  item.gateway_number,
+                  item.ip,
+                  item.location,
+                  String(item.building),
+              ].some((value) => value.toLocaleLowerCase().includes(query)),
+          )
+        : data.value.gateways;
+});
+const gatewayUpCount = computed(
+    () => data.value.gateways.filter((item) => item.state === 'up').length,
+);
+const gatewayDownCount = computed(
+    () => data.value.gateways.filter((item) => item.state === 'down').length,
+);
 let timer: ReturnType<typeof setInterval> | undefined;
 const today = new Date();
 today.setHours(12, 0, 0, 0);
@@ -249,462 +292,644 @@ onUnmounted(() => {
                 </div>
             </header>
             <main>
-                <div class="intro-row">
-                    <div>
-                        <div class="eyebrow">
-                            <span class="eyebrow-line"></span> CAMPUS NETWORK
-                            MONITOR
-                        </div>
-                        <h1>每一项服务，<br /><em>都清晰可见。</em></h1>
-                        <p class="intro-copy">
-                            持续追踪校内常用网站的可访问性，让服务状态一目了然。
-                        </p>
-                    </div>
-                    <div class="intro-side">
-                        <span>最后检测时间</span
-                        ><strong>{{ displayDate(data.lastCheckedAt) }}</strong
-                        ><span class="timezone">北京时间 · UTC+8</span>
-                    </div>
-                </div>
-                <section
-                    class="overview"
-                    :class="`overview-${overall}`"
-                    aria-label="整体运行状态"
-                >
-                    <div class="overview-icon">
-                        <Check
-                            v-if="overall === 'up'"
-                            :size="25"
-                            :stroke-width="2.5"
-                        /><WifiOff
-                            v-else-if="overall === 'down'"
-                            :size="25"
-                        /><Clock3 v-else :size="25" />
-                    </div>
-                    <div class="overview-text">
-                        <span class="overline">当前状态 · SYSTEM OVERVIEW</span>
-                        <h2>
-                            {{
-                                overall === 'up'
-                                    ? '所有服务运行正常'
-                                    : overall === 'down'
-                                      ? '部分服务访问异常'
-                                      : overall === 'pending'
-                                        ? '部分服务待复核'
-                                        : overall === 'maintenance'
-                                          ? '部分服务计划维护中'
-                                          : '监测中断／状态未知'
-                            }}
-                        </h2>
-                        <p>
-                            {{
-                                overall === 'up'
-                                    ? '所有已监测的校内服务均可正常访问。'
-                                    : overall === 'down'
-                                      ? `${downCount} 项服务已确认访问异常，请查看下方详情。`
-                                      : overall === 'pending'
-                                        ? `${pendingCount} 项服务首次探测失败，正在等待下一次检测。`
-                                        : overall === 'maintenance'
-                                          ? `${maintenanceCount} 项服务处于计划维护时段，探测仍在继续。`
-                                          : `${unknownCount} 项服务超过 5 分钟没有新的探测记录。`
-                            }}
-                        </p>
-                    </div>
-                    <div class="overview-stamp">
-                        <ShieldCheck :size="18" /><span
-                            >{{ upCount }} / {{ data.services.length
-                            }}<small>服务正常</small></span
-                        >
-                    </div>
-                </section>
-                <section
-                    v-if="visibleMaintenance.length"
-                    class="maintenance-section"
-                    aria-label="维护预告"
-                >
-                    <div class="maintenance-heading">
-                        <CalendarDays :size="20" />
-                        <div>
-                            <span>MAINTENANCE NOTICE</span>
-                            <h2>计划维护预告</h2>
-                        </div>
-                    </div>
-                    <article
-                        v-for="window in visibleMaintenance"
-                        :key="window.id"
-                        class="maintenance-notice"
+                <nav class="status-tabs" aria-label="监测类别">
+                    <button
+                        type="button"
+                        :class="{ active: activeTab === 'services' }"
+                        :aria-current="
+                            activeTab === 'services' ? 'page' : undefined
+                        "
+                        @click="activeTab = 'services'"
                     >
-                        <span class="maintenance-status">{{
-                            window.status === 'active' ? '维护中' : '即将维护'
-                        }}</span>
+                        校园网站
+                    </button>
+                    <button
+                        type="button"
+                        :class="{ active: activeTab === 'gateways' }"
+                        :aria-current="
+                            activeTab === 'gateways' ? 'page' : undefined
+                        "
+                        @click="activeTab = 'gateways'"
+                    >
+                        宿舍电表网关 <span>{{ data.gateways.length }}</span>
+                    </button>
+                </nav>
+                <div v-show="activeTab === 'services'">
+                    <div class="intro-row">
                         <div>
-                            <h3>{{ window.title }}</h3>
-                            <p>{{ window.description }}</p>
-                            <p class="maintenance-meta">
-                                受影响服务：{{
-                                    window.service_names.join('、')
+                            <div class="eyebrow">
+                                <span class="eyebrow-line"></span> CAMPUS
+                                NETWORK MONITOR
+                            </div>
+                            <h1>每一项服务，<br /><em>都清晰可见。</em></h1>
+                            <p class="intro-copy">
+                                持续追踪校内常用网站的可访问性，让服务状态一目了然。
+                            </p>
+                        </div>
+                        <div class="intro-side">
+                            <span>最后检测时间</span
+                            ><strong>{{
+                                displayDate(data.lastCheckedAt)
+                            }}</strong
+                            ><span class="timezone">北京时间 · UTC+8</span>
+                        </div>
+                    </div>
+                    <section
+                        class="overview"
+                        :class="`overview-${overall}`"
+                        aria-label="整体运行状态"
+                    >
+                        <div class="overview-icon">
+                            <Check
+                                v-if="overall === 'up'"
+                                :size="25"
+                                :stroke-width="2.5"
+                            /><WifiOff
+                                v-else-if="overall === 'down'"
+                                :size="25"
+                            /><Clock3 v-else :size="25" />
+                        </div>
+                        <div class="overview-text">
+                            <span class="overline"
+                                >当前状态 · SYSTEM OVERVIEW</span
+                            >
+                            <h2>
+                                {{
+                                    overall === 'up'
+                                        ? '所有服务运行正常'
+                                        : overall === 'down'
+                                          ? '部分服务访问异常'
+                                          : overall === 'pending'
+                                            ? '部分服务待复核'
+                                            : overall === 'maintenance'
+                                              ? '部分服务计划维护中'
+                                              : '监测中断／状态未知'
+                                }}
+                            </h2>
+                            <p>
+                                {{
+                                    overall === 'up'
+                                        ? '所有已监测的校内服务均可正常访问。'
+                                        : overall === 'down'
+                                          ? `${downCount} 项服务已确认访问异常，请查看下方详情。`
+                                          : overall === 'pending'
+                                            ? `${pendingCount} 项服务首次探测失败，正在等待下一次检测。`
+                                            : overall === 'maintenance'
+                                              ? `${maintenanceCount} 项服务处于计划维护时段，探测仍在继续。`
+                                              : `${unknownCount} 项服务超过 5 分钟没有新的探测记录。`
                                 }}
                             </p>
                         </div>
-                        <time
-                            >{{ displayDate(window.starts_at) }} —
-                            {{ displayDate(window.ends_at) }} · 北京时间</time
-                        >
-                    </article>
-                </section>
-                <div class="metric-row">
-                    <div class="metric">
-                        <span class="metric-label">监测服务</span
-                        ><strong
-                            >{{ data.services.length }}<small>项</small></strong
-                        ><span class="metric-foot">持续关注校园网络</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">当前可访问</span
-                        ><strong>{{ upCount }}<small>项</small></strong
-                        ><span class="metric-foot"
-                            ><span class="mini-dot"></span> 最近一次检测</span
-                        >
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">近 30 天平均可用率</span
-                        ><strong
-                            >{{ averageUptime
-                            }}<small v-if="averageUptime !== '—'"
-                                >%</small
-                            ></strong
-                        ><span class="metric-foot"
-                            >仅统计实际探测；缺失时段不计入</span
-                        >
-                    </div>
-                </div>
-                <section class="services-section">
-                    <div class="section-heading">
-                        <div>
-                            <div class="eyebrow section-eyebrow">
-                                01 / SERVICE HEALTH
-                            </div>
-                            <h2>服务运行状态</h2>
-                        </div>
-                        <div class="service-tools">
-                            <span class="section-note"
-                                >最近 30 天的每日检测记录</span
+                        <div class="overview-stamp">
+                            <ShieldCheck :size="18" /><span
+                                >{{ upCount }} / {{ data.services.length
+                                }}<small>服务正常</small></span
                             >
-                            <label class="service-search">
-                                <Search :size="17" aria-hidden="true" />
-                                <input
-                                    v-model="serviceSearch"
-                                    type="search"
-                                    autocomplete="off"
-                                    aria-label="按域名或服务名称查找"
-                                    placeholder="搜索域名或服务名称"
-                                />
-                                <button
-                                    v-if="serviceSearch"
-                                    type="button"
-                                    aria-label="清空搜索"
-                                    @click="serviceSearch = ''"
-                                >
-                                    <X :size="15" />
-                                </button>
-                            </label>
-                        </div>
-                    </div>
-                    <p class="search-count" aria-live="polite">
-                        {{
-                            serviceSearch.trim()
-                                ? `找到 ${filteredServices.length} / ${data.services.length} 项服务`
-                                : `共 ${data.services.length} 项服务`
-                        }}
-                    </p>
-                    <div class="services-list">
-                        <article
-                            v-for="(service, index) in filteredServices"
-                            :key="service.key"
-                            class="service-card"
-                        >
-                            <div class="service-top">
-                                <div class="service-identity">
-                                    <span class="service-index"
-                                        >0{{ index + 1 }}</span
-                                    >
-                                    <div class="service-name-wrap">
-                                        <div class="service-title-line">
-                                            <span
-                                                class="status-indicator"
-                                                :class="service.state"
-                                            ></span>
-                                            <h3>{{ service.name }}</h3>
-                                            <span
-                                                class="state-tag"
-                                                :class="service.state"
-                                                >{{
-                                                    service.state === 'up'
-                                                        ? '运行正常'
-                                                        : service.state ===
-                                                            'down'
-                                                          ? '访问异常'
-                                                          : service.state ===
-                                                              'maintenance'
-                                                            ? '计划维护中'
-                                                            : service.state ===
-                                                                'pending'
-                                                              ? '可能异常／待复核'
-                                                              : '监测中断／状态未知'
-                                                }}</span
-                                            >
-                                            <span
-                                                v-if="
-                                                    service.maintenance &&
-                                                    service.state !==
-                                                        'maintenance'
-                                                "
-                                                class="maintenance-inline"
-                                                >维护时段</span
-                                            >
-                                        </div>
-                                        <p>{{ service.description }}</p>
-                                    </div>
-                                </div>
-                                <div class="service-rate">
-                                    <strong>{{
-                                        service.uptime === null
-                                            ? '—'
-                                            : `${service.uptime.toFixed(2)}%`
-                                    }}</strong
-                                    ><span
-                                        >近 30 天可用率{{
-                                            service.has_gaps
-                                                ? ' · 有缺失时段'
-                                                : ''
-                                        }}</span
-                                    >
-                                </div>
-                            </div>
-                            <div
-                                class="service-bar"
-                                role="img"
-                                :aria-label="`${service.name}最近30天状态`"
-                            >
-                                <span
-                                    v-for="date in visibleDays"
-                                    :key="date"
-                                    class="bar-day"
-                                    :class="[
-                                        service.days[date]?.state ?? 'unknown',
-                                        service.days[date]?.maintenance
-                                            ? 'has-maintenance'
-                                            : '',
-                                    ]"
-                                    :title="`${date} · ${service.days[date] ? { up: '正常', degraded: '部分异常', down: '异常', maintenance: '计划维护' }[service.days[date].state] + ` · ${service.days[date].count}次检测${service.days[date].maintenance ? ' · 含维护时段' : ''}` : '暂无数据'}`"
-                                ></span>
-                            </div>
-                            <div class="bar-labels">
-                                <span>30 天前</span><span>今天</span>
-                            </div>
-                            <div class="service-footer">
-                                <a
-                                    :href="service.url"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    >{{
-                                        service.url.replace(/^https?:\/\//, '')
-                                    }}
-                                    <ExternalLink :size="13" /></a
-                                ><span>{{
-                                    service.checked_at
-                                        ? `最近响应 ${service.response_ms} ms${service.status_code ? ` · HTTP ${service.status_code}` : ''}`
-                                        : '尚无检测数据'
-                                }}</span>
-                            </div>
-                            <div
-                                v-if="
-                                    (service.state === 'down' ||
-                                        service.state === 'pending') &&
-                                    service.error
-                                "
-                                class="service-error"
-                            >
-                                {{ service.error }}
-                            </div>
-                        </article>
-                    </div>
-                    <div
-                        v-if="filteredServices.length === 0"
-                        class="search-empty"
-                    >
-                        <Search :size="23" aria-hidden="true" />
-                        <strong>没有找到匹配的服务</strong>
-                        <span>试试输入其他域名片段或服务名称。</span>
-                        <button type="button" @click="serviceSearch = ''">
-                            清空搜索
-                        </button>
-                    </div>
-                    <div class="legend">
-                        <span><i class="legend-up"></i> 正常</span
-                        ><span><i class="legend-degraded"></i> 部分异常</span
-                        ><span><i class="legend-down"></i> 异常</span
-                        ><span><i class="legend-unknown"></i> 暂无数据</span>
-                        <span><i class="legend-maintenance"></i> 计划维护</span>
-                    </div>
-                </section>
-                <div class="lower-grid">
-                    <section>
-                        <div class="section-heading compact">
-                            <div>
-                                <div class="eyebrow section-eyebrow">
-                                    02 / ACTIVITY CALENDAR
-                                </div>
-                                <h2>事件日历</h2>
-                            </div>
-                            <CalendarDays :size="21" class="heading-icon" />
-                        </div>
-                        <div class="calendar-card">
-                            <div class="calendar-head">
-                                <button
-                                    type="button"
-                                    aria-label="上个月"
-                                    :disabled="monthOffset <= -2"
-                                    @click="
-                                        monthOffset--;
-                                        selectedDay = null;
-                                    "
-                                >
-                                    <ChevronLeft :size="18" /></button
-                                ><strong>{{ monthLabel }}</strong
-                                ><button
-                                    type="button"
-                                    aria-label="下个月"
-                                    :disabled="monthOffset >= 0"
-                                    @click="
-                                        monthOffset++;
-                                        selectedDay = null;
-                                    "
-                                >
-                                    <ChevronRight :size="18" />
-                                </button>
-                            </div>
-                            <div class="calendar-grid weekdays">
-                                <span
-                                    v-for="day in [
-                                        '一',
-                                        '二',
-                                        '三',
-                                        '四',
-                                        '五',
-                                        '六',
-                                        '日',
-                                    ]"
-                                    :key="day"
-                                    >{{ day }}</span
-                                >
-                            </div>
-                            <div class="calendar-grid dates">
-                                <button
-                                    v-for="day in calendar"
-                                    :key="day.key"
-                                    type="button"
-                                    :class="[
-                                        day.current ? '' : 'outside',
-                                        dayState(day.key),
-                                        dayHasMaintenance(day.key)
-                                            ? 'has-maintenance'
-                                            : '',
-                                        selectedDay === day.key
-                                            ? 'selected'
-                                            : '',
-                                    ]"
-                                    :disabled="!day.current || day.future"
-                                    :aria-label="`${day.key} ${dayState(day.key)}`"
-                                    @click="selectedDay = day.key"
-                                >
-                                    <span>{{ day.number }}</span>
-                                </button>
-                            </div>
-                            <div class="calendar-detail">
-                                <template v-if="selectedDay"
-                                    ><strong>{{ selectedDay }}</strong
-                                    ><span v-if="dayDetails.length">{{
-                                        dayDetails
-                                            .map(
-                                                (x) =>
-                                                    `${x.service.name}：${x.record.state === 'maintenance' ? '计划维护' : x.record.state === 'up' ? '正常' : '出现异常'}${x.record.maintenance && x.record.state !== 'maintenance' ? '（含维护）' : ''}`,
-                                            )
-                                            .join(' · ')
-                                    }}</span
-                                    ><span v-else
-                                        >该日暂无检测记录</span
-                                    ></template
-                                ><template v-else
-                                    ><span
-                                        >选择日期查看当日服务状态</span
-                                    ></template
-                                >
-                            </div>
                         </div>
                     </section>
-                    <section>
-                        <div class="section-heading compact">
+                    <section
+                        v-if="visibleMaintenance.length"
+                        class="maintenance-section"
+                        aria-label="维护预告"
+                    >
+                        <div class="maintenance-heading">
+                            <CalendarDays :size="20" />
+                            <div>
+                                <span>MAINTENANCE NOTICE</span>
+                                <h2>计划维护预告</h2>
+                            </div>
+                        </div>
+                        <article
+                            v-for="window in visibleMaintenance"
+                            :key="window.id"
+                            class="maintenance-notice"
+                        >
+                            <span class="maintenance-status">{{
+                                window.status === 'active'
+                                    ? '维护中'
+                                    : '即将维护'
+                            }}</span>
+                            <div>
+                                <h3>{{ window.title }}</h3>
+                                <p>{{ window.description }}</p>
+                                <p class="maintenance-meta">
+                                    受影响服务：{{
+                                        window.service_names.join('、')
+                                    }}
+                                </p>
+                            </div>
+                            <time
+                                >{{ displayDate(window.starts_at) }} —
+                                {{ displayDate(window.ends_at) }} ·
+                                北京时间</time
+                            >
+                        </article>
+                    </section>
+                    <div class="metric-row">
+                        <div class="metric">
+                            <span class="metric-label">监测服务</span
+                            ><strong
+                                >{{ data.services.length
+                                }}<small>项</small></strong
+                            ><span class="metric-foot">持续关注校园网络</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">当前可访问</span
+                            ><strong>{{ upCount }}<small>项</small></strong
+                            ><span class="metric-foot"
+                                ><span class="mini-dot"></span>
+                                最近一次检测</span
+                            >
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">近 30 天平均可用率</span
+                            ><strong
+                                >{{ averageUptime
+                                }}<small v-if="averageUptime !== '—'"
+                                    >%</small
+                                ></strong
+                            ><span class="metric-foot"
+                                >仅统计实际探测；缺失时段不计入</span
+                            >
+                        </div>
+                    </div>
+                    <section class="services-section">
+                        <div class="section-heading">
                             <div>
                                 <div class="eyebrow section-eyebrow">
-                                    03 / INCIDENT LOG
+                                    01 / SERVICE HEALTH
                                 </div>
-                                <h2>异常记录</h2>
+                                <h2>服务运行状态</h2>
                             </div>
-                            <ArrowUpRight :size="21" class="heading-icon" />
-                        </div>
-                        <div class="events-card">
-                            <template v-if="data.incidents.length"
-                                ><a
-                                    v-for="incident in data.incidents"
-                                    :key="incident.key"
-                                    class="event-row"
-                                    :href="`/incidents/${encodeURIComponent(incident.key)}`"
-                                    :aria-label="`查看${incident.service}异常详情`"
+                            <div class="service-tools">
+                                <span class="section-note"
+                                    >最近 30 天的每日检测记录</span
                                 >
-                                    <span class="event-mark"></span>
-                                    <div>
-                                        <strong
-                                            >{{
-                                                incident.service
-                                            }}确认访问异常</strong
-                                        ><span>{{
-                                            incident.recovered_at
-                                                ? `已于 ${displayDate(incident.recovered_at)} 恢复`
-                                                : incident.closed_at
-                                                  ? `监测已于 ${displayDate(incident.closed_at)} 终止`
-                                                  : '故障持续中'
-                                        }}</span>
-                                    </div>
-                                    <time>{{
-                                        displayDate(incident.confirmed_at)
-                                    }}</time>
-                                </a></template
-                            >
-                            <div v-else class="empty-events">
-                                <div class="empty-icon">
-                                    <ShieldCheck :size="25" />
-                                </div>
-                                <strong>暂无异常记录</strong>
-                                <p>最近 30 天尚无确认的服务故障。</p>
-                                <span>历史记录会随定时检测逐步积累</span>
+                                <label class="service-search">
+                                    <Search :size="17" aria-hidden="true" />
+                                    <input
+                                        v-model="serviceSearch"
+                                        type="search"
+                                        autocomplete="off"
+                                        aria-label="按域名或服务名称查找"
+                                        placeholder="搜索域名或服务名称"
+                                    />
+                                    <button
+                                        v-if="serviceSearch"
+                                        type="button"
+                                        aria-label="清空搜索"
+                                        @click="serviceSearch = ''"
+                                    >
+                                        <X :size="15" />
+                                    </button>
+                                </label>
                             </div>
+                        </div>
+                        <p class="search-count" aria-live="polite">
+                            {{
+                                serviceSearch.trim()
+                                    ? `找到 ${filteredServices.length} / ${data.services.length} 项服务`
+                                    : `共 ${data.services.length} 项服务`
+                            }}
+                        </p>
+                        <div class="services-list">
+                            <article
+                                v-for="(service, index) in filteredServices"
+                                :key="service.key"
+                                class="service-card"
+                            >
+                                <div class="service-top">
+                                    <div class="service-identity">
+                                        <span class="service-index"
+                                            >0{{ index + 1 }}</span
+                                        >
+                                        <div class="service-name-wrap">
+                                            <div class="service-title-line">
+                                                <span
+                                                    class="status-indicator"
+                                                    :class="service.state"
+                                                ></span>
+                                                <h3>{{ service.name }}</h3>
+                                                <span
+                                                    class="state-tag"
+                                                    :class="service.state"
+                                                    >{{
+                                                        service.state === 'up'
+                                                            ? '运行正常'
+                                                            : service.state ===
+                                                                'down'
+                                                              ? '访问异常'
+                                                              : service.state ===
+                                                                  'maintenance'
+                                                                ? '计划维护中'
+                                                                : service.state ===
+                                                                    'pending'
+                                                                  ? '可能异常／待复核'
+                                                                  : '监测中断／状态未知'
+                                                    }}</span
+                                                >
+                                                <span
+                                                    v-if="
+                                                        service.maintenance &&
+                                                        service.state !==
+                                                            'maintenance'
+                                                    "
+                                                    class="maintenance-inline"
+                                                    >维护时段</span
+                                                >
+                                            </div>
+                                            <p>{{ service.description }}</p>
+                                        </div>
+                                    </div>
+                                    <div class="service-rate">
+                                        <strong>{{
+                                            service.uptime === null
+                                                ? '—'
+                                                : `${service.uptime.toFixed(2)}%`
+                                        }}</strong
+                                        ><span
+                                            >近 30 天可用率{{
+                                                service.has_gaps
+                                                    ? ' · 有缺失时段'
+                                                    : ''
+                                            }}</span
+                                        >
+                                    </div>
+                                </div>
+                                <div
+                                    class="service-bar"
+                                    role="img"
+                                    :aria-label="`${service.name}最近30天状态`"
+                                >
+                                    <span
+                                        v-for="date in visibleDays"
+                                        :key="date"
+                                        class="bar-day"
+                                        :class="[
+                                            service.days[date]?.state ??
+                                                'unknown',
+                                            service.days[date]?.maintenance
+                                                ? 'has-maintenance'
+                                                : '',
+                                        ]"
+                                        :title="`${date} · ${service.days[date] ? { up: '正常', degraded: '部分异常', down: '异常', maintenance: '计划维护' }[service.days[date].state] + ` · ${service.days[date].count}次检测${service.days[date].maintenance ? ' · 含维护时段' : ''}` : '暂无数据'}`"
+                                    ></span>
+                                </div>
+                                <div class="bar-labels">
+                                    <span>30 天前</span><span>今天</span>
+                                </div>
+                                <div class="service-footer">
+                                    <a
+                                        :href="service.url"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        >{{
+                                            service.url.replace(
+                                                /^https?:\/\//,
+                                                '',
+                                            )
+                                        }}
+                                        <ExternalLink :size="13" /></a
+                                    ><span>{{
+                                        service.checked_at
+                                            ? `最近响应 ${service.response_ms} ms${service.status_code ? ` · HTTP ${service.status_code}` : ''}`
+                                            : '尚无检测数据'
+                                    }}</span>
+                                </div>
+                                <div
+                                    v-if="
+                                        (service.state === 'down' ||
+                                            service.state === 'pending') &&
+                                        service.error
+                                    "
+                                    class="service-error"
+                                >
+                                    {{ service.error }}
+                                </div>
+                            </article>
+                        </div>
+                        <div
+                            v-if="filteredServices.length === 0"
+                            class="search-empty"
+                        >
+                            <Search :size="23" aria-hidden="true" />
+                            <strong>没有找到匹配的服务</strong>
+                            <span>试试输入其他域名片段或服务名称。</span>
+                            <button type="button" @click="serviceSearch = ''">
+                                清空搜索
+                            </button>
+                        </div>
+                        <div class="legend">
+                            <span><i class="legend-up"></i> 正常</span
+                            ><span
+                                ><i class="legend-degraded"></i> 部分异常</span
+                            ><span><i class="legend-down"></i> 异常</span
+                            ><span
+                                ><i class="legend-unknown"></i> 暂无数据</span
+                            >
+                            <span
+                                ><i class="legend-maintenance"></i>
+                                计划维护</span
+                            >
+                        </div>
+                    </section>
+                    <div class="lower-grid">
+                        <section>
+                            <div class="section-heading compact">
+                                <div>
+                                    <div class="eyebrow section-eyebrow">
+                                        02 / ACTIVITY CALENDAR
+                                    </div>
+                                    <h2>事件日历</h2>
+                                </div>
+                                <CalendarDays :size="21" class="heading-icon" />
+                            </div>
+                            <div class="calendar-card">
+                                <div class="calendar-head">
+                                    <button
+                                        type="button"
+                                        aria-label="上个月"
+                                        :disabled="monthOffset <= -2"
+                                        @click="
+                                            monthOffset--;
+                                            selectedDay = null;
+                                        "
+                                    >
+                                        <ChevronLeft :size="18" /></button
+                                    ><strong>{{ monthLabel }}</strong
+                                    ><button
+                                        type="button"
+                                        aria-label="下个月"
+                                        :disabled="monthOffset >= 0"
+                                        @click="
+                                            monthOffset++;
+                                            selectedDay = null;
+                                        "
+                                    >
+                                        <ChevronRight :size="18" />
+                                    </button>
+                                </div>
+                                <div class="calendar-grid weekdays">
+                                    <span
+                                        v-for="day in [
+                                            '一',
+                                            '二',
+                                            '三',
+                                            '四',
+                                            '五',
+                                            '六',
+                                            '日',
+                                        ]"
+                                        :key="day"
+                                        >{{ day }}</span
+                                    >
+                                </div>
+                                <div class="calendar-grid dates">
+                                    <button
+                                        v-for="day in calendar"
+                                        :key="day.key"
+                                        type="button"
+                                        :class="[
+                                            day.current ? '' : 'outside',
+                                            dayState(day.key),
+                                            dayHasMaintenance(day.key)
+                                                ? 'has-maintenance'
+                                                : '',
+                                            selectedDay === day.key
+                                                ? 'selected'
+                                                : '',
+                                        ]"
+                                        :disabled="!day.current || day.future"
+                                        :aria-label="`${day.key} ${dayState(day.key)}`"
+                                        @click="selectedDay = day.key"
+                                    >
+                                        <span>{{ day.number }}</span>
+                                    </button>
+                                </div>
+                                <div class="calendar-detail">
+                                    <template v-if="selectedDay"
+                                        ><strong>{{ selectedDay }}</strong
+                                        ><span v-if="dayDetails.length">{{
+                                            dayDetails
+                                                .map(
+                                                    (x) =>
+                                                        `${x.service.name}：${x.record.state === 'maintenance' ? '计划维护' : x.record.state === 'up' ? '正常' : '出现异常'}${x.record.maintenance && x.record.state !== 'maintenance' ? '（含维护）' : ''}`,
+                                                )
+                                                .join(' · ')
+                                        }}</span
+                                        ><span v-else
+                                            >该日暂无检测记录</span
+                                        ></template
+                                    ><template v-else
+                                        ><span
+                                            >选择日期查看当日服务状态</span
+                                        ></template
+                                    >
+                                </div>
+                            </div>
+                        </section>
+                        <section>
+                            <div class="section-heading compact">
+                                <div>
+                                    <div class="eyebrow section-eyebrow">
+                                        03 / INCIDENT LOG
+                                    </div>
+                                    <h2>异常记录</h2>
+                                </div>
+                                <ArrowUpRight :size="21" class="heading-icon" />
+                            </div>
+                            <div class="events-card">
+                                <template v-if="data.incidents.length"
+                                    ><a
+                                        v-for="incident in data.incidents"
+                                        :key="incident.key"
+                                        class="event-row"
+                                        :href="`/incidents/${encodeURIComponent(incident.key)}`"
+                                        :aria-label="`查看${incident.service}异常详情`"
+                                    >
+                                        <span class="event-mark"></span>
+                                        <div>
+                                            <strong
+                                                >{{
+                                                    incident.service
+                                                }}确认访问异常</strong
+                                            ><span>{{
+                                                incident.recovered_at
+                                                    ? `已于 ${displayDate(incident.recovered_at)} 恢复`
+                                                    : incident.closed_at
+                                                      ? `监测已于 ${displayDate(incident.closed_at)} 终止`
+                                                      : '故障持续中'
+                                            }}</span>
+                                        </div>
+                                        <time>{{
+                                            displayDate(incident.confirmed_at)
+                                        }}</time>
+                                    </a></template
+                                >
+                                <div v-else class="empty-events">
+                                    <div class="empty-icon">
+                                        <ShieldCheck :size="25" />
+                                    </div>
+                                    <strong>暂无异常记录</strong>
+                                    <p>最近 30 天尚无确认的服务故障。</p>
+                                    <span>历史记录会随定时检测逐步积累</span>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                    <section
+                        v-if="maintenanceHistory.length"
+                        class="maintenance-history"
+                    >
+                        <h2>近期维护记录</h2>
+                        <div
+                            v-for="window in maintenanceHistory"
+                            :key="window.id"
+                        >
+                            <strong>{{ window.title }}</strong
+                            ><span
+                                >{{ window.service_names.join('、') }} ·
+                                {{ displayDate(window.starts_at) }} —
+                                {{ displayDate(window.ends_at) }}</span
+                            >
                         </div>
                     </section>
                 </div>
                 <section
-                    v-if="maintenanceHistory.length"
-                    class="maintenance-history"
+                    v-show="activeTab === 'gateways'"
+                    class="gateway-panel"
+                    aria-label="宿舍电表网关状态"
                 >
-                    <h2>近期维护记录</h2>
-                    <div v-for="window in maintenanceHistory" :key="window.id">
-                        <strong>{{ window.title }}</strong
-                        ><span
-                            >{{ window.service_names.join('、') }} ·
-                            {{ displayDate(window.starts_at) }} —
-                            {{ displayDate(window.ends_at) }}</span
-                        >
+                    <div class="gateway-head">
+                        <div>
+                            <div class="eyebrow">
+                                <span class="eyebrow-line"></span> DORMITORY
+                                GATEWAYS
+                            </div>
+                            <h1>
+                                宿舍电表网关<span class="brand-dot">.</span>
+                            </h1>
+                            <p>
+                                从校内监测节点每 2 分钟检测一次。连续两次 Ping
+                                失败后确认故障。
+                            </p>
+                        </div>
+                        <div class="gateway-last">
+                            最后检测时间<strong>{{
+                                displayDate(data.gatewayLastCheckedAt)
+                            }}</strong
+                            ><small>北京时间 · UTC+8</small>
+                        </div>
                     </div>
+                    <div class="gateway-metrics">
+                        <div>
+                            <span>正在监测</span
+                            ><strong
+                                >{{ data.gateways.length
+                                }}<small>台</small></strong
+                            >
+                        </div>
+                        <div>
+                            <span>当前在线</span
+                            ><strong
+                                >{{ gatewayUpCount }}<small>台</small></strong
+                            >
+                        </div>
+                        <div>
+                            <span>确认故障</span
+                            ><strong
+                                >{{ gatewayDownCount }}<small>台</small></strong
+                            >
+                        </div>
+                    </div>
+                    <div class="gateway-toolbar">
+                        <h2>网关列表</h2>
+                        <label class="service-search"
+                            ><Search :size="17" aria-hidden="true" /><input
+                                v-model="gatewaySearch"
+                                type="search"
+                                aria-label="搜索网关编号、IP 或楼栋"
+                                placeholder="搜索编号、IP 或楼栋"
+                        /></label>
+                    </div>
+                    <div class="gateway-table-wrap">
+                        <table class="gateway-table">
+                            <thead>
+                                <tr>
+                                    <th>楼栋</th>
+                                    <th>网关号</th>
+                                    <th>网关 IP</th>
+                                    <th>安装位置</th>
+                                    <th>状态</th>
+                                    <th>最近检测</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="item in filteredGateways"
+                                    :key="item.key"
+                                >
+                                    <td>
+                                        <strong
+                                            >{{ item.building }} 号楼</strong
+                                        >
+                                    </td>
+                                    <td class="mono">
+                                        {{ item.gateway_number }}
+                                    </td>
+                                    <td class="mono">{{ item.ip }}</td>
+                                    <td>{{ item.location }}</td>
+                                    <td>
+                                        <span
+                                            class="gateway-state"
+                                            :class="item.state"
+                                            >{{
+                                                {
+                                                    up: '在线',
+                                                    down: '故障',
+                                                    pending: '待复核',
+                                                    unknown: '状态未知',
+                                                }[item.state]
+                                            }}</span
+                                        >
+                                    </td>
+                                    <td>{{ displayDate(item.checked_at) }}</td>
+                                </tr>
+                                <tr v-if="filteredGateways.length === 0">
+                                    <td colspan="6" class="gateway-empty">
+                                        没有找到匹配的网关
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <section class="gateway-incidents">
+                        <h2>近期网关异常</h2>
+                        <div
+                            v-if="!data.gatewayIncidents.length"
+                            class="gateway-empty"
+                        >
+                            最近 30 天暂无确认的网关故障。
+                        </div>
+                        <a
+                            v-for="incident in data.gatewayIncidents"
+                            :key="incident.key"
+                            :href="`/incidents/${encodeURIComponent(incident.key)}`"
+                        >
+                            <strong>{{ incident.service }}</strong>
+                            <span>{{
+                                incident.recovered_at
+                                    ? `已于 ${displayDate(incident.recovered_at)} 恢复`
+                                    : incident.closed_at
+                                      ? '监测已终止'
+                                      : '故障持续中'
+                            }}</span>
+                            <time>{{
+                                displayDate(incident.confirmed_at)
+                            }}</time>
+                            <ArrowUpRight :size="17" />
+                        </a>
+                    </section>
                 </section>
             </main>
             <footer class="site-footer">
@@ -720,6 +945,229 @@ onUnmounted(() => {
 
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700;800&display=swap');
+/* Gateway tab follows the existing status page palette and type scale. */
+.status-tabs {
+    display: flex;
+    gap: 8px;
+    padding: 20px 0 0;
+    border-bottom: 1px solid var(--line);
+}
+.status-tabs button {
+    border: 0;
+    border-bottom: 3px solid transparent;
+    background: transparent;
+    padding: 13px 20px;
+    color: #6b8075;
+    font:
+        700 14px 'Noto Sans SC',
+        sans-serif;
+    cursor: pointer;
+}
+.status-tabs button.active {
+    color: #173f35;
+    border-color: #41936c;
+}
+.status-tabs span {
+    margin-left: 5px;
+    color: #89a397;
+    font:
+        500 11px 'DM Mono',
+        monospace;
+}
+.gateway-panel {
+    padding: 62px 0 85px;
+}
+.gateway-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    align-items: end;
+}
+.gateway-head h1 {
+    font-size: clamp(32px, 5vw, 52px);
+    letter-spacing: -0.06em;
+    margin: 16px 0 12px;
+}
+.gateway-head p {
+    color: #73847c;
+    margin: 0;
+}
+.gateway-last {
+    display: flex;
+    flex-direction: column;
+    color: #80908a;
+    font-size: 12px;
+    text-align: right;
+    gap: 5px;
+}
+.gateway-last strong {
+    color: #18302b;
+    font-size: 18px;
+}
+.gateway-last small {
+    font-size: 11px;
+}
+.gateway-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin: 40px 0 45px;
+}
+.gateway-metrics > div {
+    background: #fff;
+    border: 1px solid #e5eae5;
+    border-radius: 16px;
+    padding: 22px 26px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.gateway-metrics span {
+    color: #778a80;
+    font-size: 12px;
+}
+.gateway-metrics strong {
+    font:
+        500 35px 'DM Mono',
+        monospace;
+    color: #173f35;
+}
+.gateway-metrics small {
+    font:
+        500 12px 'Noto Sans SC',
+        sans-serif;
+    margin-left: 6px;
+}
+.gateway-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+.gateway-toolbar h2,
+.gateway-incidents h2 {
+    font-size: 22px;
+    letter-spacing: -0.04em;
+    margin: 0;
+}
+.gateway-table-wrap {
+    overflow-x: auto;
+    background: #fff;
+    border: 1px solid #e5eae5;
+    border-radius: 16px;
+}
+.gateway-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 750px;
+}
+.gateway-table th {
+    text-align: left;
+    color: #7b8e84;
+    background: #f2f6f1;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    padding: 17px 20px;
+}
+.gateway-table td {
+    padding: 17px 20px;
+    border-top: 1px solid #edf0eb;
+    color: #375348;
+}
+.gateway-table td strong {
+    color: #18302b;
+}
+.gateway-table .mono {
+    font:
+        500 12px 'DM Mono',
+        monospace;
+}
+.gateway-table tbody tr:hover {
+    background: #f9fbf8;
+}
+.gateway-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.gateway-state::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+}
+.gateway-state.up {
+    color: #248058;
+}
+.gateway-state.down {
+    color: #ca5546;
+}
+.gateway-state.pending {
+    color: #b78324;
+}
+.gateway-state.unknown {
+    color: #7d8c86;
+}
+.gateway-incidents {
+    margin-top: 44px;
+}
+.gateway-incidents h2 {
+    margin-bottom: 17px;
+}
+.gateway-incidents a {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    padding: 17px 20px;
+    border: 1px solid #e5eae5;
+    border-radius: 11px;
+    background: #fff;
+    color: #365b4b;
+    margin-bottom: 8px;
+    text-decoration: none;
+}
+.gateway-incidents a strong {
+    flex: 1;
+    color: #18302b;
+}
+.gateway-incidents a time {
+    color: #87978e;
+    font-size: 12px;
+}
+.gateway-empty {
+    color: #80908a;
+    padding: 26px;
+    text-align: center;
+}
+@media (max-width: 700px) {
+    .gateway-head {
+        align-items: start;
+        flex-direction: column;
+    }
+    .gateway-last {
+        text-align: left;
+    }
+    .gateway-metrics {
+        gap: 8px;
+    }
+    .gateway-metrics > div {
+        padding: 14px;
+    }
+    .gateway-metrics strong {
+        font-size: 25px;
+    }
+    .gateway-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+    .gateway-incidents a {
+        flex-wrap: wrap;
+    }
+}
 .status-page {
     --ink: #18302b;
     --muted: #80908a;

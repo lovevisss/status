@@ -10,7 +10,7 @@ class MonitorAlert extends Model
 {
     protected $fillable = [
         'monitor_incident_id', 'kind', 'request_id', 'status',
-        'platform_task_id', 'recipient_id', 'recipient_email',
+        'platform_task_id', 'recipient_id', 'recipient_email', 'recipient_mobile', 'channel',
         'title', 'content', 'attempts', 'next_attempt_at', 'last_error',
     ];
 

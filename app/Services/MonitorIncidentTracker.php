@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\MonitorAlert;
 use App\Models\MonitorCheck;
 use App\Models\MonitorIncident;
+use App\Models\GatewayRecipient;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -16,7 +17,7 @@ class MonitorIncidentTracker
         private readonly MonitorMaintenance $maintenance,
     ) {}
 
-    /** @param array{key: string, name: string, url: string} $service */
+    /** @param array{key: string, name: string, url: string, group?: string} $service */
     public function record(array $service, MonitorCheck $check): void
     {
         DB::transaction(function () use ($service, $check) {
@@ -56,6 +57,8 @@ class MonitorIncidentTracker
                     MonitorIncident::create([
                         'incident_key' => (string) Str::ulid(),
                         'service_key' => $service['key'],
+                        'target_name' => $service['name'],
+                        'target_address' => $service['url'],
                         'started_at' => $check->checked_at,
                     ]);
 
@@ -96,6 +99,7 @@ class MonitorIncidentTracker
                         ]);
                         $incident->alerts()->where('kind', 'recovery')
                             ->where('recipient_id', $outage->recipient_id)
+                            ->where('channel', $outage->channel)
                             ->update([
                                 'status' => 'cancelled',
                                 'next_attempt_at' => null,
@@ -107,14 +111,17 @@ class MonitorIncidentTracker
         });
     }
 
-    /** @param array{key: string, name: string, url: string} $service */
+    /** @param array{key: string, name: string, url: string, group?: string} $service */
     private function enqueue(MonitorIncident $incident, array $service, MonitorCheck $check, string $kind): void
     {
         $outage = $kind === 'outage';
         $eventAt = $check->checked_at->copy()->timezone('Asia/Shanghai')->format('Y-m-d H:i:s');
         $startedAt = $incident->started_at->copy()->timezone('Asia/Shanghai')->format('Y-m-d H:i:s');
 
-        $title = $outage ? "【校园服务故障】{$service['name']}访问异常" : "【校园服务恢复】{$service['name']}已恢复访问";
+        $gateway = ($service['group'] ?? 'service') === 'gateway';
+        $title = $gateway
+            ? ($outage ? "【电表网关故障】{$service['name']}离线" : "【电表网关恢复】{$service['name']}已在线")
+            : ($outage ? "【校园服务故障】{$service['name']}访问异常" : "【校园服务恢复】{$service['name']}已恢复访问");
         $content = implode("\n", [
             $outage ? '连续两次定时检测失败，已确认服务故障。' : '定时检测确认服务已恢复。',
             "服务：{$service['name']}",
@@ -125,13 +132,27 @@ class MonitorIncidentTracker
             '状态页面：'.config('app.url'),
         ]);
 
-        $recipients = $outage ? $this->recipients->all() : $incident->alerts()
+        $recipients = $outage ? ($gateway ? GatewayRecipient::where('is_enabled', true)->orderBy('id')->get()
+            ->flatMap(function (GatewayRecipient $person) {
+                $items = [];
+                if ($person->notify_email) {
+                    $items[] = ['id' => $person->person_id, 'email' => $person->email, 'mobile' => null, 'channel' => 'email'];
+                }
+                if ($person->notify_sms) {
+                    $items[] = ['id' => $person->person_id, 'email' => null, 'mobile' => $person->mobile, 'channel' => 'sms'];
+                }
+
+                return $items;
+            })->all() : $this->recipients->all()) : $incident->alerts()
             ->where('kind', 'outage')->whereNotNull('recipient_id')->get()
-            ->map(fn (MonitorAlert $alert) => ['id' => $alert->recipient_id, 'email' => $alert->recipient_email])
+            ->map(fn (MonitorAlert $alert) => [
+                'id' => $alert->recipient_id, 'email' => $alert->recipient_email,
+                'mobile' => $alert->recipient_mobile, 'channel' => $alert->channel,
+            ])
             ->all();
 
         if ($recipients === []) {
-            Log::error('No enabled monitor email recipients are configured in the database.');
+            Log::error('No enabled monitor recipients are configured in the database.', ['group' => $gateway ? 'gateway' : 'service']);
             MonitorAlert::create([
                 'monitor_incident_id' => $incident->id,
                 'kind' => $kind,
@@ -139,23 +160,36 @@ class MonitorIncidentTracker
                 'status' => 'configuration_error',
                 'title' => $title,
                 'content' => $content,
-                'last_error' => '数据库中没有已启用的邮件收件人',
+                'last_error' => $gateway ? '数据库中没有已启用的网关处理人员' : '数据库中没有已启用的邮件收件人',
             ]);
 
             return;
         }
 
         foreach ($recipients as $recipient) {
+            $channel = $recipient['channel'] ?? 'email';
+            $smsTemplate = config('monitors.gateway_sms.'.($outage ? 'outage_template' : 'recovery_template'));
+            $smsReady = ! $gateway || $channel !== 'sms' || (is_string($smsTemplate) && trim($smsTemplate) !== ''
+                && is_string(config('monitors.gateway_sms.api_token')) && config('monitors.gateway_sms.api_token') !== '');
+            $smsContent = $gateway && $channel === 'sms' && $smsReady
+                ? strtr($smsTemplate, [
+                    '{{gateway}}' => $service['name'], '{{ip}}' => $service['url'],
+                    '{{status}}' => $outage ? '故障' : '恢复',
+                    '{{time}}' => $eventAt,
+                ]) : $content;
             MonitorAlert::create([
                 'monitor_incident_id' => $incident->id,
                 'kind' => $kind,
-                'request_id' => MonitorRequestIds::forRecipient($kind, $incident->incident_key, $recipient['id']),
-                'status' => 'pending',
+                'request_id' => MonitorRequestIds::forRecipient($kind, $incident->incident_key, $gateway ? $recipient['id'].':'.$channel : $recipient['id']),
+                'status' => $smsReady ? 'pending' : 'configuration_error',
                 'recipient_id' => $recipient['id'],
                 'recipient_email' => $recipient['email'],
+                'recipient_mobile' => $recipient['mobile'] ?? null,
+                'channel' => $channel,
                 'title' => $title,
-                'content' => $content,
-                'next_attempt_at' => now(),
+                'content' => $smsContent,
+                'next_attempt_at' => $smsReady ? now() : null,
+                'last_error' => $smsReady ? null : '短信 API 密钥或已审批模板未配置',
             ]);
         }
     }

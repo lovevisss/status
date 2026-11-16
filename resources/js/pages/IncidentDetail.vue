@@ -14,6 +14,7 @@ type Incident = {
     key: string;
     service_name: string;
     service_url: string;
+    is_gateway: boolean;
     started_at: string;
     confirmed_at: string;
     recovered_at: string | null;
@@ -63,6 +64,9 @@ const statusText = computed(
             closed: '监测已终止',
         })[props.incident.status],
 );
+const returnUrl = computed(() =>
+    props.incident.is_gateway ? '/?tab=gateways' : '/',
+);
 const dateTime = (value: string) =>
     new Intl.DateTimeFormat('zh-CN', {
         timeZone: 'Asia/Shanghai',
@@ -87,12 +91,12 @@ const dateTime = (value: string) =>
                     ><span
                         >校园服务状态<small>CAMPUS SERVICE STATUS</small></span
                     ></a
-                ><a class="header-return" href="/"
+                ><a class="header-return" :href="returnUrl"
                     ><ArrowLeft :size="16" />返回状态页</a
                 >
             </header>
             <main>
-                <a class="breadcrumb" href="/"
+                <a class="breadcrumb" :href="returnUrl"
                     ><ArrowLeft :size="15" />异常记录 <span>/</span> 详情</a
                 >
                 <section class="hero" aria-label="故障状态">
@@ -120,9 +124,13 @@ const dateTime = (value: string) =>
                         <p>
                             {{
                                 incident.status === 'ongoing'
-                                    ? '服务已连续两次探测失败，故障仍在持续。'
+                                    ? incident.is_gateway
+                                        ? '网关已连续两次 Ping 失败，故障仍在持续。'
+                                        : '服务已连续两次探测失败，故障仍在持续。'
                                     : incident.status === 'recovered'
-                                      ? '定时探测确认服务已恢复访问。'
+                                      ? incident.is_gateway
+                                          ? '定时 Ping 确认网关已恢复在线。'
+                                          : '定时探测确认服务已恢复访问。'
                                       : '该监测周期已结束；未记录到服务恢复探测。'
                             }}
                         </p>
@@ -205,19 +213,33 @@ const dateTime = (value: string) =>
                             <span class="section-number">02</span>
                             <div>
                                 <span class="eyebrow">AFFECTED SERVICE</span>
-                                <h2>受影响服务</h2>
+                                <h2>
+                                    {{
+                                        incident.is_gateway
+                                            ? '受影响网关'
+                                            : '受影响服务'
+                                    }}
+                                </h2>
                             </div>
                         </div>
                         <div class="service-details">
-                            <span>服务名称</span
+                            <span>{{
+                                incident.is_gateway
+                                    ? '网关编号与位置'
+                                    : '服务名称'
+                            }}</span
                             ><strong>{{ incident.service_name }}</strong
-                            ><span>监测地址</span
+                            ><span>{{
+                                incident.is_gateway ? '网关 IP' : '监测地址'
+                            }}</span
                             ><a
+                                v-if="!incident.is_gateway"
                                 :href="incident.service_url"
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 >{{ incident.service_url }}
                                 <ArrowUpRight :size="14" /></a
+                            ><strong v-else>{{ incident.service_url }}</strong
                             ><span>事件编号</span
                             ><code>{{ incident.key }}</code>
                         </div>
@@ -228,7 +250,7 @@ const dateTime = (value: string) =>
                         </div>
                     </aside>
                 </div>
-                <a class="bottom-return" href="/"
+                <a class="bottom-return" :href="returnUrl"
                     ><ArrowLeft :size="16" />返回全部服务状态</a
                 >
             </main>

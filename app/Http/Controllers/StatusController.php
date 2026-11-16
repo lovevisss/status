@@ -6,8 +6,10 @@ use App\Models\MonitorCheck;
 use App\Models\MonitorIncident;
 use App\Models\MonitorMaintenanceWindow;
 use App\Models\MonitorService;
+use App\Models\GatewayMonitor;
 use App\Services\MonitorAdminAccess;
 use App\Services\MonitorServiceStats;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\JsonResponse;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -132,10 +134,56 @@ class StatusController extends Controller
 
         return [
             'services' => $items,
+            ...$this->gatewayData(),
             'incidents' => $incidents,
             'maintenance' => $maintenance,
             'lastCheckedAt' => $lastCheckedAt,
             'historyDays' => 30,
         ];
+    }
+
+    /** @return array<string, mixed> */
+    private function gatewayData(): array
+    {
+        $gateways = GatewayMonitor::where('is_enabled', true)->orderBy('building')->get();
+        $keys = $gateways->pluck('key')->all();
+        $stats = DB::table('monitor_checks')->whereIn('service_key', $keys)->where('checked_at', '>=', now()->subDays(30))
+            ->where('is_maintenance', false)
+            ->selectRaw('service_key, COUNT(*) AS sample_count, SUM(CASE WHEN is_up = 1 THEN 1 ELSE 0 END) AS up_count')
+            ->groupBy('service_key')->get()->keyBy('service_key');
+        $open = MonitorIncident::whereIn('service_key', $keys)->whereNull('closed_at')->latest('id')->get()
+            ->unique('service_key')->keyBy('service_key');
+        $items = [];
+        $lastChecked = null;
+        foreach ($gateways as $gateway) {
+            $entry = $stats->get($gateway->key);
+            $latest = MonitorCheck::where('service_key', $gateway->key)->latest('checked_at')->latest('id')->first();
+            $stale = ! $latest || $latest->checked_at->lt(now()->subMinutes(5));
+            $incident = $open->get($gateway->key);
+            $state = $stale ? 'unknown' : ($latest->is_up ? 'up' : ($incident?->confirmed_at ? 'down' : 'pending'));
+            $checkedAt = $latest?->checked_at?->toIso8601String();
+            if ($checkedAt && ($lastChecked === null || $checkedAt > $lastChecked)) {
+                $lastChecked = $checkedAt;
+            }
+            $items[] = [
+                ...$gateway->only(['gateway_number', 'ip', 'location', 'building']),
+                'key' => $gateway->key, 'state' => $state,
+                'checked_at' => $checkedAt,
+                'response_ms' => $latest?->response_ms,
+                'uptime' => $entry && $entry->sample_count ? round($entry->up_count / $entry->sample_count * 100, 2) : null,
+            ];
+        }
+        $names = $gateways->pluck('location', 'key');
+        $incidents = MonitorIncident::where('service_key', 'like', 'gateway-%')->whereNotNull('confirmed_at')
+            ->where('confirmed_at', '>=', now()->subDays(30))->latest('confirmed_at')->limit(10)->get()
+            ->map(fn (MonitorIncident $incident) => [
+                'key' => $incident->incident_key,
+                'service' => $incident->target_name ?? $names->get($incident->service_key),
+                'confirmed_at' => $incident->confirmed_at?->toIso8601String(),
+                'recovered_at' => $incident->recovered_at?->toIso8601String(),
+                'closed_at' => $incident->closed_at?->toIso8601String(),
+            ])->all();
+
+        return ['gateways' => $items, 'gatewayIncidents' => $incidents, 'gatewayLastCheckedAt' => $lastChecked];
     }
 }

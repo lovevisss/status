@@ -128,6 +128,8 @@ const dateLabel = (value: string) =>
                 </div>
                 <nav aria-label="管理导航">
                     <a href="/admin/monitors">监测服务</a>
+                    <a href="/admin/gateways">电表网关</a>
+                    <a href="/admin/gateway-recipients">网关处理人员</a>
                     <a
                         class="current"
                         href="/admin/recipients"

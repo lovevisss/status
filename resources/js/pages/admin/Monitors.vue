@@ -114,6 +114,8 @@ const dateLabel = (value: string) =>
                         aria-current="page"
                         >监测服务</a
                     >
+                    <a href="/admin/gateways">电表网关</a>
+                    <a href="/admin/gateway-recipients">网关处理人员</a>
                     <a href="/admin/recipients">邮件收件人</a>
                     <a href="/admin/maintenance">计划维护</a>
                     <a href="/admin/administrators">管理员</a>

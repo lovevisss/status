@@ -78,7 +78,7 @@ cron 负责每 2 分钟探测一次、每分钟派发并查询邮件状态。不
 
 在 `/admin/gateway-recipients` 配置网关专属处理组。每人填写消息平台已收录的学工号，可选填邮箱与中国大陆手机号以覆盖平台快照，并选择邮件、短信或两者。网关告警只发给该组；现有 `/admin/recipients` 仍只用于网站告警。后台可发送标明“测试”的单人通知，每人 5 分钟限一次。
 
-短信使用学校消息平台同一通知地址，但需单独配置具备短信权限的 `GATEWAY_SMS_API_TOKEN`。将 MAS 已审批签名与模板原文分别填入 `GATEWAY_SMS_OUTAGE_TEMPLATE`、`GATEWAY_SMS_RECOVERY_TEMPLATE`、`GATEWAY_SMS_TEST_TEMPLATE`。可用占位符：`{{gateway}}`、`{{ip}}`、`{{status}}`、`{{time}}`。模板或密钥缺失时，短信告警记录为配置错误，不会提交；邮件仍按配置发送。修改 `.env` 后运行 `php artisan config:cache`。平台的 `accepted` 仅表示 MAS 已受理，不保证终端最终收到短信。
+短信和邮件使用相同的通知地址与 `MONITOR_ALERT_API_TOKEN`。故障、恢复、测试三条短信正文固定在 `config/monitors.php`，发送时将 `{{ip}}`、`{{安装位置}}` 替换为目标网关的信息，不需要在 `.env` 重复配置。单人测试选取楼栋序号最小的已启用网关；没有启用网关时不会创建测试短信。密钥未配置时，告警记录为配置错误。平台的 `accepted` 仅表示 MAS 已受理，不保证终端最终收到短信。接口文档要求正文符合 MAS 已审批签名与模板，上线前应以真实平台验证这些固定文案。
 
 ## 邮件配置
 

@@ -17,7 +17,7 @@ class MonitorIncidentTracker
         private readonly MonitorMaintenance $maintenance,
     ) {}
 
-    /** @param array{key: string, name: string, url: string, group?: string} $service */
+    /** @param array{key: string, name: string, url: string, group?: string, location?: string} $service */
     public function record(array $service, MonitorCheck $check): void
     {
         DB::transaction(function () use ($service, $check) {
@@ -111,7 +111,7 @@ class MonitorIncidentTracker
         });
     }
 
-    /** @param array{key: string, name: string, url: string, group?: string} $service */
+    /** @param array{key: string, name: string, url: string, group?: string, location?: string} $service */
     private function enqueue(MonitorIncident $incident, array $service, MonitorCheck $check, string $kind): void
     {
         $outage = $kind === 'outage';
@@ -170,12 +170,10 @@ class MonitorIncidentTracker
             $channel = $recipient['channel'] ?? 'email';
             $smsTemplate = config('monitors.gateway_sms.'.($outage ? 'outage_template' : 'recovery_template'));
             $smsReady = ! $gateway || $channel !== 'sms' || (is_string($smsTemplate) && trim($smsTemplate) !== ''
-                && is_string(config('monitors.gateway_sms.api_token')) && config('monitors.gateway_sms.api_token') !== '');
+                && is_string(config('monitors.alerts.api_token')) && config('monitors.alerts.api_token') !== '');
             $smsContent = $gateway && $channel === 'sms' && $smsReady
                 ? strtr($smsTemplate, [
-                    '{{gateway}}' => $service['name'], '{{ip}}' => $service['url'],
-                    '{{status}}' => $outage ? '故障' : '恢复',
-                    '{{time}}' => $eventAt,
+                    '{{ip}}' => $service['url'], '{{安装位置}}' => $service['location'] ?? '',
                 ]) : $content;
             MonitorAlert::create([
                 'monitor_incident_id' => $incident->id,
@@ -189,7 +187,7 @@ class MonitorIncidentTracker
                 'title' => $title,
                 'content' => $smsContent,
                 'next_attempt_at' => $smsReady ? now() : null,
-                'last_error' => $smsReady ? null : '短信 API 密钥或已审批模板未配置',
+                'last_error' => $smsReady ? null : 'MONITOR_ALERT_API_TOKEN 或短信模板未配置',
             ]);
         }
     }

@@ -32,9 +32,9 @@ class MonitorAlertDispatcher
         }
 
         foreach ($due as $alert) {
-            $config = $this->settings($alert);
+            $config = $this->settings();
             if ($config === null) {
-                $message = $alert->channel === 'sms' ? 'GATEWAY_SMS_API_TOKEN 或消息平台地址未配置' : 'MONITOR_ALERT_API_URL 或 MONITOR_ALERT_API_TOKEN 未配置';
+                $message = 'MONITOR_ALERT_API_URL 或 MONITOR_ALERT_API_TOKEN 未配置';
                 if (Cache::add('monitor-alert-config-warning-'.$alert->channel, true, 3600)) {
                     Log::error($message);
                 }
@@ -56,10 +56,10 @@ class MonitorAlertDispatcher
     }
 
     /** @return array{api_url: string, api_token: string}|null */
-    private function settings(MonitorAlert $alert): ?array
+    private function settings(): ?array
     {
         $apiUrl = config('monitors.alerts.api_url');
-        $apiToken = $alert->channel === 'sms' ? config('monitors.gateway_sms.api_token') : config('monitors.alerts.api_token');
+        $apiToken = config('monitors.alerts.api_token');
         if (! is_string($apiUrl) || filter_var($apiUrl, FILTER_VALIDATE_URL) === false
             || parse_url($apiUrl, PHP_URL_SCHEME) !== 'https'
             || ! is_string($apiToken) || $apiToken === '') {

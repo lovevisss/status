@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\GatewayRecipient;
+use App\Models\GatewayMonitor;
 use App\Models\MonitorAlert;
 use App\Models\MonitorIncident;
 use App\Services\MonitorRequestIds;
@@ -75,13 +76,14 @@ class GatewayRecipientController extends Controller
         if ($recent) {
             throw ValidationException::withMessages(['test' => '同一处理人员每 5 分钟只能测试一次。']);
         }
-        if ($recipient->notify_sms && (! config('monitors.gateway_sms.test_template') || ! config('monitors.gateway_sms.api_token'))) {
-            throw ValidationException::withMessages(['test' => '短信 API 密钥或已审批测试模板未配置。']);
+        if (! config('monitors.alerts.api_token')) {
+            throw ValidationException::withMessages(['test' => '消息平台 MONITOR_ALERT_API_TOKEN 未配置。']);
         }
-        if ($recipient->notify_email && ! config('monitors.alerts.api_token')) {
-            throw ValidationException::withMessages(['test' => '邮件 API 密钥未配置。']);
+        $gateway = $recipient->notify_sms ? GatewayMonitor::where('is_enabled', true)->orderBy('building')->orderBy('id')->first() : null;
+        if ($recipient->notify_sms && ! $gateway) {
+            throw ValidationException::withMessages(['test' => '没有已启用的网关，无法生成测试短信。']);
         }
-        DB::transaction(function () use ($recipient) {
+        DB::transaction(function () use ($recipient, $gateway) {
             $incident = MonitorIncident::create([
                 'incident_key' => (string) Str::ulid(), 'service_key' => '__gateway_test__',
                 'started_at' => now(), 'confirmed_at' => now(), 'recovered_at' => now(),
@@ -100,8 +102,7 @@ class GatewayRecipientController extends Controller
                     'title' => '【测试】宿舍电表网关通知',
                     'content' => $channel === 'sms'
                         ? strtr((string) config('monitors.gateway_sms.test_template'), [
-                            '{{gateway}}' => '测试网关', '{{ip}}' => '测试地址',
-                            '{{status}}' => '测试', '{{time}}' => now()->timezone('Asia/Shanghai')->format('Y-m-d H:i:s'),
+                            '{{ip}}' => $gateway->ip, '{{安装位置}}' => $gateway->location,
                         ])
                         : '这是一封网关测试邮件，不代表真实故障。',
                     'next_attempt_at' => now(),

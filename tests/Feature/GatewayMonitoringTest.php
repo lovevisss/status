@@ -25,13 +25,7 @@ class GatewayMonitoringTest extends TestCase
     {
         parent::setUp();
         $this->withoutVite();
-        config()->set('monitors.alerts.api_token', 'email-token');
-        config()->set('monitors.gateway_sms', [
-            'api_token' => 'sms-token',
-            'outage_template' => '【已审批签名】{{gateway}}于{{time}}{{status}}',
-            'recovery_template' => '【已审批签名】{{gateway}}于{{time}}{{status}}',
-            'test_template' => '【已审批签名】网关测试通知',
-        ]);
+        config()->set('monitors.alerts.api_token', 'shared-token');
     }
 
     private function admin(): User
@@ -80,12 +74,15 @@ class GatewayMonitoringTest extends TestCase
         $this->assertDatabaseMissing('monitor_alerts', ['recipient_id' => 'website-only']);
 
         Http::fake(function (Request $request) {
-            $sms = $request->hasHeader('Authorization', 'Bearer sms-token');
-            $this->assertSame([$sms ? 'sms' : 'email'], $request->data()['channels']);
+            $this->assertTrue($request->hasHeader('Authorization', 'Bearer shared-token'));
+            $sms = $request->data()['channels'] === ['sms'];
             $this->assertSame('001234', $request->data()['recipients'][0]['id']);
             if ($sms) {
                 $this->assertSame('13800138000', $request->data()['recipients'][0]['mobile']);
-                $this->assertStringStartsWith('【已审批签名】', $request->data()['content']);
+                $this->assertContains($request->data()['content'], [
+                    '10.4.90.11 1号楼3楼电表间的设备故障，请及时关注',
+                    '10.4.90.11 1号楼3楼电表间的设备故障已经恢复',
+                ]);
             } else {
                 $this->assertSame('operator@example.edu.cn', $request->data()['recipients'][0]['email']);
             }
@@ -96,6 +93,8 @@ class GatewayMonitoringTest extends TestCase
         $this->assertSame(2, MonitorAlert::where('status', 'accepted')->count());
         $runner->run();
         $this->assertSame(2, MonitorAlert::where('kind', 'recovery')->count());
+        app(MonitorAlertDispatcher::class)->run();
+        $this->assertSame(4, MonitorAlert::where('status', 'accepted')->count());
         $this->assertNotNull(MonitorIncident::where('service_key', $gateway->key)->firstOrFail()->recovered_at);
         $this->getJson('/api/status')->assertJsonPath('gateways.0.state', 'up');
         $this->assertSame(3, MonitorCheck::where('service_key', $gateway->key)->count());
@@ -126,17 +125,30 @@ class GatewayMonitoringTest extends TestCase
         $this->assertDatabaseHas('gateway_recipients', ['person_id' => '001234', 'notify_sms' => true]);
     }
 
-    public function test_missing_approved_sms_template_records_configuration_error(): void
+    public function test_missing_shared_token_records_sms_configuration_error(): void
     {
         GatewayMonitor::where('gateway_number', '!=', '202500830')->update(['is_enabled' => false]);
         GatewayRecipient::create(['person_id' => '001234', 'notify_sms' => true, 'is_enabled' => true]);
-        config()->set('monitors.gateway_sms.outage_template', null);
+        config()->set('monitors.alerts.api_token', null);
         $gateway = GatewayMonitor::where('gateway_number', '202500830')->firstOrFail();
         $ping = $this->mock(GatewayPing::class);
         $ping->shouldReceive('probe')->twice()->andReturn([$gateway->ip => ['up' => false, 'response_ms' => 10, 'error' => 'Ping 无响应']]);
         app(GatewayRunner::class)->run();
         app(GatewayRunner::class)->run();
         $this->assertDatabaseHas('monitor_alerts', ['channel' => 'sms', 'status' => 'configuration_error']);
+    }
+
+    public function test_gateway_sms_test_uses_first_enabled_gateway_and_requires_one(): void
+    {
+        $this->actingAs($this->admin());
+        $person = GatewayRecipient::create(['person_id' => '001234', 'notify_sms' => true, 'is_enabled' => true]);
+        $this->post('/admin/gateway-recipients/'.$person->id.'/test')->assertRedirect('/admin/gateway-recipients');
+        $this->assertSame('10.4.90.11 1号楼3楼电表间的设备  这是测试', MonitorAlert::firstOrFail()->content);
+
+        GatewayMonitor::query()->update(['is_enabled' => false]);
+        $this->travel(6)->minutes();
+        $this->post('/admin/gateway-recipients/'.$person->id.'/test')->assertSessionHasErrors('test');
+        $this->assertSame(1, MonitorAlert::count());
     }
 
     public function test_ping_program_failure_does_not_open_gateway_incidents(): void

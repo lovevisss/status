@@ -43,6 +43,7 @@ class GatewayRunner
                         'key' => $gateway->key,
                         'name' => $gateway->gateway_number.' · '.$gateway->location,
                         'url' => $gateway->ip,
+                        'location' => $gateway->location,
                         'group' => 'gateway',
                     ], $check);
                 }

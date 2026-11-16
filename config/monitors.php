@@ -10,10 +10,9 @@ return [
         'recipients' => env('MONITOR_ALERT_RECIPIENTS'),
     ],
     'gateway_sms' => [
-        'api_token' => env('GATEWAY_SMS_API_TOKEN'),
-        'outage_template' => env('GATEWAY_SMS_OUTAGE_TEMPLATE'),
-        'recovery_template' => env('GATEWAY_SMS_RECOVERY_TEMPLATE'),
-        'test_template' => env('GATEWAY_SMS_TEST_TEMPLATE'),
+        'outage_template' => '{{ip}} {{安装位置}}的设备故障，请及时关注',
+        'recovery_template' => '{{ip}} {{安装位置}}的设备故障已经恢复',
+        'test_template' => '{{ip}} {{安装位置}}的设备  这是测试',
     ],
     'services' => [
         [

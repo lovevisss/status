@@ -18,7 +18,23 @@ type Person = {
     is_enabled: boolean;
     tests: Test[];
 };
-defineProps<{ recipients: Person[]; message: string | null }>();
+type RecentAlert = {
+    request_id: string;
+    recipient_id: string;
+    channel: string;
+    kind: string;
+    title: string;
+    content: string;
+    status: string;
+    last_error: string | null;
+    created_at: string;
+    mobile_override: boolean;
+};
+defineProps<{
+    recipients: Person[];
+    recentAlerts: RecentAlert[];
+    message: string | null;
+}>();
 const editing = ref<number | null>(null);
 const testError = ref('');
 const form = useForm({
@@ -232,6 +248,64 @@ function test(person: Person) {
                         </tbody>
                     </table>
                 </div>
+                <section class="alert-history" aria-label="最近网关通知">
+                    <h2>最近网关通知</h2>
+                    <p>
+                        可查看实际提交的短信或邮件正文及平台返回的错误；不显示手机号和密钥。
+                    </p>
+                    <div v-if="!recentAlerts.length" class="empty">
+                        暂无通知记录
+                    </div>
+                    <details
+                        v-for="item in recentAlerts"
+                        :key="item.request_id"
+                        class="alert-entry"
+                    >
+                        <summary>
+                            <strong
+                                >{{ item.channel === 'sms' ? '短信' : '邮件' }}
+                                ·
+                                {{
+                                    item.kind === 'test'
+                                        ? '测试'
+                                        : item.kind === 'outage'
+                                          ? '故障'
+                                          : '恢复'
+                                }}</strong
+                            >
+                            <span>学工号 {{ item.recipient_id }}</span>
+                            <span
+                                :class="item.status === 'failed' ? 'error' : ''"
+                                >{{ item.status }}</span
+                            >
+                            <time>{{
+                                new Date(item.created_at).toLocaleString(
+                                    'zh-CN',
+                                    { timeZone: 'Asia/Shanghai' },
+                                )
+                            }}</time>
+                        </summary>
+                        <div class="alert-detail">
+                            <p><b>标题：</b>{{ item.title }}</p>
+                            <p><b>正文：</b>{{ item.content }}</p>
+                            <p>
+                                <b>手机号覆盖：</b
+                                >{{
+                                    item.mobile_override
+                                        ? '是'
+                                        : '否，使用平台快照'
+                                }}
+                            </p>
+                            <p>
+                                <b>请求编号：</b
+                                ><code>{{ item.request_id }}</code>
+                            </p>
+                            <p v-if="item.last_error" class="error">
+                                <b>平台错误：</b>{{ item.last_error }}
+                            </p>
+                        </div>
+                    </details>
+                </section>
             </main>
         </div>
     </div>
@@ -418,6 +492,50 @@ th {
 .empty {
     text-align: center;
     color: #87948c;
+}
+.alert-history {
+    margin-top: 38px;
+}
+.alert-history h2 {
+    margin: 0 0 8px;
+    font-size: 21px;
+}
+.alert-history > p {
+    color: #758a7d;
+    font-size: 12px;
+    margin-bottom: 18px;
+}
+.alert-entry {
+    background: #fff;
+    border: 1px solid #e2e9e3;
+    border-radius: 10px;
+    margin: 8px 0;
+}
+.alert-entry summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    padding: 15px 18px;
+    font-size: 12px;
+    color: #687f70;
+}
+.alert-entry summary strong {
+    color: #18302b;
+    min-width: 100px;
+}
+.alert-entry summary time {
+    margin-left: auto;
+}
+.alert-detail {
+    border-top: 1px solid #edf1eb;
+    padding: 12px 18px;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+.alert-detail p {
+    margin: 9px 0;
 }
 td small {
     display: block;

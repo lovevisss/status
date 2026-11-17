@@ -6,6 +6,7 @@ use App\Models\MonitorAlert;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Http\Client\Response;
 
 class MonitorAlertDispatcher
 {
@@ -141,7 +142,13 @@ class MonitorAlertDispatcher
                 return;
             }
 
-            if (in_array($response->status(), [401, 422], true) || ($response->status() >= 400 && $response->status() < 500 && $response->status() !== 429)) {
+            if ($response->status() === 422) {
+                $this->fail($alert, $this->validationError($response));
+
+                return;
+            }
+
+            if ($response->status() === 401 || ($response->status() >= 400 && $response->status() < 500 && $response->status() !== 429)) {
                 $this->fail($alert, '消息平台拒绝请求：HTTP '.$response->status());
 
                 return;
@@ -151,6 +158,30 @@ class MonitorAlertDispatcher
         } catch (\Throwable $exception) {
             $this->retry($alert, '消息平台连接失败：'.mb_substr($exception->getMessage(), 0, 300));
         }
+    }
+
+    private function validationError(Response $response): string
+    {
+        $errors = $response->json('errors');
+        if (! is_array($errors)) {
+            return '消息平台拒绝请求：HTTP 422（未返回字段错误）';
+        }
+
+        $details = [];
+        foreach ($errors as $field => $messages) {
+            if (! is_string($field) || ! preg_match('/\A[a-zA-Z0-9_.-]+\z/', $field)) {
+                continue;
+            }
+            foreach (is_array($messages) ? $messages : [$messages] as $message) {
+                if (is_string($message) && $message !== '') {
+                    $details[] = $field.'：'.str_replace(["\r", "\n"], ' ', $message);
+                }
+            }
+        }
+
+        return $details === []
+            ? '消息平台拒绝请求：HTTP 422（未返回字段错误）'
+            : '消息平台拒绝请求：HTTP 422；'.mb_substr(implode('；', $details), 0, 500);
     }
 
     /** @param array{api_url: string, api_token: string} $config */

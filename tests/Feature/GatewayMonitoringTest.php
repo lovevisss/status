@@ -151,6 +151,26 @@ class GatewayMonitoringTest extends TestCase
         $this->assertSame(1, MonitorAlert::count());
     }
 
+    public function test_422_field_error_and_sent_content_are_visible_to_gateway_admin(): void
+    {
+        $this->actingAs($this->admin());
+        $person = GatewayRecipient::create(['person_id' => '001234', 'notify_sms' => true, 'is_enabled' => true]);
+        $this->post('/admin/gateway-recipients/'.$person->id.'/test')->assertRedirect('/admin/gateway-recipients');
+        Http::fake(['*' => Http::response([
+            'message' => 'The given data was invalid.',
+            'errors' => ['channels.0' => ['该渠道不可用']],
+        ], 422)]);
+        app(MonitorAlertDispatcher::class)->run();
+
+        $alert = MonitorAlert::firstOrFail()->fresh();
+        $this->assertSame('failed', $alert->status);
+        $this->assertStringContainsString('channels.0：该渠道不可用', $alert->last_error);
+        $this->get('/admin/gateway-recipients')->assertInertia(fn ($page) => $page
+            ->where('recentAlerts.0.content', '10.4.90.11 1号楼3楼电表间的设备  这是测试')
+            ->where('recentAlerts.0.last_error', $alert->last_error)
+            ->etc());
+    }
+
     public function test_ping_program_failure_does_not_open_gateway_incidents(): void
     {
         GatewayMonitor::where('gateway_number', '!=', '202500830')->update(['is_enabled' => false]);

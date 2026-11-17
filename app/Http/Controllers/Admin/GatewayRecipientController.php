@@ -31,8 +31,18 @@ class GatewayRecipientController extends Controller
             return [...$person->only(['id', 'person_id', 'email', 'mobile', 'notify_email', 'notify_sms', 'is_enabled']), 'tests' => $tests];
         });
 
+        $recentAlerts = MonitorAlert::whereHas('incident', fn ($query) => $query
+            ->where('service_key', 'like', 'gateway-%')
+            ->orWhere('service_key', '__gateway_test__'))
+            ->latest('id')->limit(20)->get()
+            ->map(fn (MonitorAlert $alert) => [
+                ...$alert->only(['request_id', 'recipient_id', 'channel', 'kind', 'title', 'content', 'status', 'last_error', 'created_at']),
+                'mobile_override' => $alert->recipient_mobile !== null,
+            ]);
+
         return Inertia::render('admin/GatewayRecipients', [
             'recipients' => $recipients,
+            'recentAlerts' => $recentAlerts,
             'message' => $request->session()->get('status'),
         ]);
     }

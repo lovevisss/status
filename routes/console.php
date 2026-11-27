@@ -5,6 +5,7 @@ use App\Models\User;
 use App\Services\MonitorAlertDispatcher;
 use App\Services\MonitorRunner;
 use App\Services\GatewayRunner;
+use App\Services\GatewayAlertBatcher;
 use App\Services\MonitorTestMailQueue;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -27,6 +28,13 @@ Artisan::command('gateway:check', function (GatewayRunner $runner) {
 })->purpose('Ping dormitory electricity gateways');
 
 Schedule::command('gateway:check')->everyTwoMinutes()->withoutOverlapping();
+
+Artisan::command('gateway:batch-alerts', function (GatewayAlertBatcher $batcher) {
+    $batcher->run();
+    $this->info('Gateway alert windows processed.');
+})->purpose('Merge simultaneous gateway outages and recoveries');
+
+Schedule::command('gateway:batch-alerts')->everyMinute()->withoutOverlapping();
 
 Artisan::command('monitor:dispatch-alerts', function (MonitorAlertDispatcher $dispatcher) {
     $dispatcher->run();

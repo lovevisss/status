@@ -73,7 +73,9 @@ class MonitorIncidentTracker
                 $incident->save();
                 if ($incident->consecutive_failures === 2) {
                     $incident->update(['confirmed_at' => $check->checked_at]);
-                    $this->enqueue($incident, $service, $check, 'outage');
+                    if (($service['group'] ?? 'service') !== 'gateway') {
+                        $this->enqueue($incident, $service, $check, 'outage');
+                    }
                 }
 
                 return;
@@ -89,6 +91,13 @@ class MonitorIncidentTracker
                 'closed_reason' => 'recovered',
             ]);
             if ($incident->confirmed_at) {
+                if (($service['group'] ?? 'service') === 'gateway' && ! $incident->notification_decided_at) {
+                    return;
+                }
+                if (($service['group'] ?? 'service') === 'gateway'
+                    && DB::table('gateway_alert_batch_members')->where('monitor_incident_id', $incident->id)->exists()) {
+                    return;
+                }
                 $this->enqueue($incident, $service, $check, 'recovery');
                 foreach ($incident->alerts()->where('kind', 'outage')->get() as $outage) {
                     if ($outage->status === 'pending' && ! $outage->platform_task_id && $outage->attempts === 0) {
@@ -109,6 +118,12 @@ class MonitorIncidentTracker
                 }
             }
         });
+    }
+
+    /** @param array{key: string, name: string, url: string, group: string, location: string} $service */
+    public function queueGatewayOutage(MonitorIncident $incident, array $service, MonitorCheck $check): void
+    {
+        $this->enqueue($incident, $service, $check, 'outage');
     }
 
     /** @param array{key: string, name: string, url: string, group?: string, location?: string} $service */

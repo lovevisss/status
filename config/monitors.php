@@ -10,6 +10,9 @@ return [
         'recipients' => env('MONITOR_ALERT_RECIPIENTS'),
     ],
     'gateway_sms' => [
+        'batch_enabled' => env('GATEWAY_BATCH_SMS_ENABLED', false),
+        'batch_outage_template' => '{{数量}}台宿舍电表网关故障，请查看状态页。',
+        'batch_recovery_template' => '{{数量}}台宿舍电表网关已全部恢复。',
         'outage_template' => '{{ip}} {{安装位置}}的设备故障，请及时关注',
         'recovery_template' => '{{ip}} {{安装位置}}的设备故障已经恢复',
         'test_template' => '{{ip}} {{安装位置}}的设备  这是测试',

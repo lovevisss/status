@@ -16,7 +16,7 @@ class MonitorIncident extends Model
 {
     protected $fillable = [
         'incident_key', 'service_key', 'consecutive_failures',
-        'started_at', 'confirmed_at', 'recovered_at', 'closed_at', 'closed_reason', 'target_name', 'target_address',
+        'started_at', 'confirmed_at', 'recovered_at', 'closed_at', 'closed_reason', 'target_name', 'target_address', 'notification_decided_at',
     ];
 
     protected function casts(): array
@@ -26,6 +26,7 @@ class MonitorIncident extends Model
             'confirmed_at' => 'datetime',
             'recovered_at' => 'datetime',
             'closed_at' => 'datetime',
+            'notification_decided_at' => 'datetime',
         ];
     }
 

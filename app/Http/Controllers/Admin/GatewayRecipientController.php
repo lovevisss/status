@@ -33,12 +33,23 @@ class GatewayRecipientController extends Controller
 
         $recentAlerts = MonitorAlert::whereHas('incident', fn ($query) => $query
             ->where('service_key', 'like', 'gateway-%')
-            ->orWhere('service_key', '__gateway_test__'))
+            ->orWhereIn('service_key', ['__gateway_test__', '__gateway_batch__']))
             ->latest('id')->limit(20)->get()
-            ->map(fn (MonitorAlert $alert) => [
-                ...$alert->only(['request_id', 'recipient_id', 'channel', 'kind', 'title', 'content', 'status', 'last_error', 'created_at']),
-                'mobile_override' => $alert->recipient_mobile !== null,
-            ]);
+            ->map(function (MonitorAlert $alert) {
+                $members = DB::table('gateway_alert_batches as batches')
+                    ->join('gateway_alert_batch_members as batch_members', 'batch_members.gateway_alert_batch_id', '=', 'batches.id')
+                    ->join('monitor_incidents as incidents', 'incidents.id', '=', 'batch_members.monitor_incident_id')
+                    ->where('batches.notification_incident_id', $alert->monitor_incident_id)
+                    ->orderBy('batch_members.monitor_incident_id')
+                    ->get(['incidents.target_name', 'incidents.target_address'])
+                    ->map(fn ($member) => $member->target_name.'：'.$member->target_address)->all();
+
+                return [
+                    ...$alert->only(['request_id', 'recipient_id', 'channel', 'kind', 'title', 'content', 'status', 'last_error', 'created_at']),
+                    'mobile_override' => $alert->recipient_mobile !== null,
+                    'batch_members' => $members,
+                ];
+            });
 
         return Inertia::render('admin/GatewayRecipients', [
             'recipients' => $recipients,

@@ -29,6 +29,7 @@ type RecentAlert = {
     last_error: string | null;
     created_at: string;
     mobile_override: boolean;
+    batch_members: string[];
 };
 defineProps<{
     recipients: Person[];
@@ -288,6 +289,15 @@ function test(person: Person) {
                         <div class="alert-detail">
                             <p><b>标题：</b>{{ item.title }}</p>
                             <p><b>正文：</b>{{ item.content }}</p>
+                            <p v-if="item.batch_members.length">
+                                <b
+                                    >汇总批次（{{
+                                        item.batch_members.length
+                                    }}
+                                    台）：</b
+                                >
+                                {{ item.batch_members.join('；') }}
+                            </p>
                             <p>
                                 <b>手机号覆盖：</b
                                 >{{
